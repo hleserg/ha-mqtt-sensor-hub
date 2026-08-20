@@ -226,6 +226,7 @@ Symptom → cause in detail: `TROUBLESHOOTING.md`.
 | `bootstrap-homeassistant.sh` | first run: owner account + MQTT config entry |
 | `normalize-entity-ids.sh` | rewrite entity ids to `<domain>.<unique_id>` |
 | `install-meshcore-integration.sh` | install/update the MeshCore custom component |
+| `install-custom-component.sh` | install/update any custom component from a GitHub repo, pinned to its latest release |
 | `backup.sh` | config-only or full archive; `--full` re-execs via sudo and reports to MQTT |
 | `prune-meshcore-entities.sh` | disable the per-contact sensors, delete registry orphans; dry run unless `--apply` |
 

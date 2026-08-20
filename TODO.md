@@ -240,6 +240,50 @@ a poller, or from HA in read-only mode; whether it lives under `own/` or a new
 namespace, since it is neither a sensor of mine nor somebody else's transmitter.
 Decide that before writing anything.
 
+### X9 · Alice / Yandex — installed, not configured `[~]`
+*Owner's call, 2026-08-21: "и под алису все установи, завтра настроим."
+Both components are on the machine and load cleanly; neither is configured, and
+an unconfigured custom component owns nothing.*
+
+Two integrations, because they solve opposite problems:
+
+| | Direction | Component | Installed |
+|---|---|---|---|
+| Voice control of what lives in HA | Alice → Home Assistant | `dext0r/yandex_smart_home` | v1.1.2 |
+| HA speaking and playing through the speaker; Yandex smart-home devices pulled into HA | Home Assistant → station | `AlexxIT/YandexStation` | v3.21.4 |
+
+Installed with `./scripts/install-custom-component.sh <repo>`, both pinned to
+their latest release tag, both recording `.installed-from`. Neither declares any
+Python `requirements`, so Home Assistant pulls nothing at startup and a boot
+without internet is unaffected. Verified after a restart: HA answered in ~9 s,
+both appear as loaded custom integrations, zero `ERROR`/`Traceback`, healthcheck
+8/8.
+
+**What is left, and it is all in the browser — the owner's part, not mine:**
+
+1. `yandex_smart_home`: Settings → Devices & Services → Add Integration →
+   *Умный дом Яндекса*. Choose the **cloud** connection type. Per its
+   documentation the cloud type needs no public address, no port forward and no
+   certificate — which is the only variant compatible with "не выставлять HA
+   наружу". The direct type is explicitly not to be used here.
+2. `yandex_station`: Add Integration → *Яндекс.Станция*, authorise by QR code.
+   The component stores a token, not the password.
+3. Then decide **which entities are exposed to Alice**. Default to a short
+   allow-list rather than the whole registry: everything exposed becomes voice-
+   reachable, including things that should not be.
+
+**Costs, recorded so they are not rediscovered later:**
+
+- Both are cloud paths by nature. Weather, MQTT and the sensors keep working
+  with the internet unplugged — only voice stops. Do not put Alice on the
+  required path of any automation; that would be avoidance #9 with extra steps.
+- The Yandex token lands in `.storage` in plaintext, inside the HA config
+  directory. That is account-level access, a wider blast radius than the
+  Keenetic case that was declined on 2026-08-20.
+- `--full` backups therefore now carry that token too. `BACKUP_RESTORE.md`
+  already treats those archives as secret; this does not change the rule, it
+  raises what the rule is protecting.
+
 ## LATER / EXPERIMENTAL
 
 ### L1 · MeshCore live map `[ ]`
