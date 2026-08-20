@@ -1,0 +1,75 @@
+# weather-engine configuration.
+# Copy to config.yaml before starting the service.
+#
+# Credentials are NOT kept here — they come from .env through the environment
+# (WEATHER_ENGINE_MQTT_USER / WEATHER_ENGINE_MQTT_PASSWORD).
+
+client_id: weather-engine
+
+mqtt:
+  host: mosquitto
+  port: 1883
+
+# How often the derivation runs. Cheap — it is arithmetic over a handful of
+# floats — and nothing is published unless a value actually changed.
+compute_interval_seconds: 30
+
+# How often the engine logs everything it is holding.
+summary_interval_seconds: 300
+
+# Freshness thresholds, in seconds since the *measurement* timestamp. These
+# mirror the defaults of `input_number.outdoor_stale_after` /
+# `outdoor_offline_after` in Home Assistant on purpose: two components
+# disagreeing about what "stale" means is its own kind of bug. They feed
+# `weather_state/data_quality`; they do not gate publishing, because every
+# output carries `computed_at` and ages honestly on its own.
+stale_after_seconds: 900
+offline_after_seconds: 3600
+
+# What this station is *supposed* to provide. `weather_state/data_quality` is
+# graded against this list and nothing else.
+#
+# It is deliberately not "everything the engine can use". A station without a
+# rain gauge or a surface probe is not degraded — it is a station without those
+# sensors, and grading it `partial` forever would make the badge meaningless.
+# Their absence costs accuracy in one rule each, and `meta` says which.
+#
+# Building sensors one at a time? List only what exists today. A node that
+# measures temperature, humidity and pressure and nothing else is *complete*,
+# and should read `ok`. Add `wind_speed` here the day the anemometer goes up —
+# from then on a dead anemometer correctly drops the grade to `partial`.
+#
+# Every name must appear under `inputs:` below and must be something the
+# derivation actually reads (see `derive.py`); the engine refuses to start
+# otherwise rather than grading against a typo forever.
+# `temperature` is mandatory — nothing derives without it.
+expected_inputs:
+  - temperature
+  - humidity
+  - pressure
+  - wind_speed
+
+# Everything the engine reads. Adding a source here is the only change required
+# when a new measurement becomes available. Not all of them are used by the
+# current derivation — see `derive.py` for what is.
+inputs:
+  temperature:          weather/outdoor/temperature
+  humidity:             weather/outdoor/humidity
+  pressure:             weather/outdoor/pressure
+  dew_point:            weather/outdoor/dew_point
+  cloud_index:          weather/outdoor/cloud_index
+  illuminance:          weather/outdoor/illuminance
+  wind_speed:           weather/outdoor/wind_speed
+  wind_gust:            weather/outdoor/wind_gust
+  rain:                 weather/outdoor/rain
+  rain_rate:            weather/outdoor/rain_rate
+  lightning_distance:   weather/outdoor/lightning_distance
+  surface_temperature:  weather/outdoor/surface_temperature
+  last_update:          weather/outdoor/last_update
+  station_status:       weather/outdoor/status
+  external_sensors:     sensors/+/+/+
+  meshcore_nodes:       meshcore/+/+
+
+outputs:
+  prefix: weather_state
+  retain: true

@@ -1,0 +1,254 @@
+# =============================================================================
+#  Reference configuration for one of my own Wi-Fi sensors.
+#  Copy per sensor, change the substitutions block, change nothing else.
+# =============================================================================
+#
+#  The contract it implements is MQTT.md §14. Four things in here are the whole
+#  reason this file exists, because ESPHome does not give them for free:
+#
+#    1. per-entity `state_topic:` -> own/<id>/<metric>, so the topic is the
+#       sensor's identity and not the entity name inside this firmware;
+#    2. `own/<id>/last_update` — the time of the MEASUREMENT, published from the
+#       node, guarded on the clock actually being set;
+#    3. `own/<id>/meta` — published once on connect, so a topic dump says what
+#       the hardware is;
+#    4. `discovery: false` — no entity appears in Home Assistant until someone
+#       adds a block to packages/own_sensors.yaml on purpose.
+#
+#  LWT, retain, and bare numeric payloads ESPHome does correctly by default.
+#
+#  NOT VERIFIED ON HARDWARE — no ESP32-C5 has been flashed. Everything below is
+#  written against the documented behaviour of the components it uses. Treat the
+#  first flash as the test, and work the checklist at the bottom.
+# =============================================================================
+
+substitutions:
+  # The sensor's identity. Lowercase [a-z0-9-], stable for the life of the
+  # installation, named for the PLACE. Replacing the board must not change it.
+  sensor_id: greenhouse
+  friendly: "Greenhouse"
+  # The broker account. Same string as sensor_id — that is what makes the global
+  # pattern rule `pattern write own/%u/#` scope this node to its own subtree and
+  # nothing else. Create it with:
+  #     ./scripts/add-mqtt-user.sh greenhouse
+  #     docker compose exec mosquitto kill -HUP 1
+  mqtt_user: greenhouse
+
+esphome:
+  name: ${sensor_id}
+  friendly_name: ${friendly}
+
+# ESP32-C5 is ESP-IDF only — it is not in ESPHome's ARDUINO_ALLOWED_VARIANTS.
+#
+# CHECK ON FIRST BUILD: the C5 v1.0 silicon needs ESP-IDF >= 5.5.2, and the
+# default IDF of a given ESPHome release may be older. If the build fails on an
+# unknown target, pin the framework rather than doubting the chip:
+#
+#     framework:
+#       type: esp-idf
+#       version: 5.5.2
+#
+esp32:
+  board: esp32-c5-devkitc-1
+  variant: esp32c5
+  framework:
+    type: esp-idf
+
+logger:
+  level: INFO
+
+# No `api:` block on purpose. The native API would make Home Assistant the entry
+# point for this sensor's data and MQTT a mirror of it — the same inversion
+# recorded in DECISIONS.md D-011, deliberately not repeated here. Data reaches
+# the broker first; Home Assistant is a consumer.
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  # The C5 is dual-band. 2.4 GHz reaches further through walls and costs less
+  # power; there is no reason for a sensor to sit on 5 GHz. If one SSID covers
+  # both bands, pin the 2.4 GHz BSSID here.
+  fast_connect: true
+  ap:
+    ssid: "${sensor_id} fallback"
+    password: !secret ap_password
+
+captive_portal:
+
+# UTC on purpose: `last_update` is ISO-8601 UTC everywhere in this stack, and
+# converting in two places is how the two stop agreeing.
+#
+# The NTP servers are on the LAN. A sensor that cannot reach the internet must
+# still keep correct time — no cloud dependency for local weather.
+time:
+  - platform: sntp
+    id: node_time
+    timezone: UTC
+    servers:
+      - 192.168.1.1
+      - 192.168.1.51
+
+mqtt:
+  id: mqtt_client
+  broker: 192.168.1.51
+  port: 1883
+  username: ${mqtt_user}
+  password: !secret mqtt_password
+  client_id: ${sensor_id}
+  topic_prefix: own/${sensor_id}
+
+  # No auto-created entities. MQTT.md §14: every entity is an explicit block in
+  # packages/own_sensors.yaml. Same gate that keeps an open 433 MHz band from
+  # filling Home Assistant with hundreds of rows.
+  discovery: false
+
+  # TLS is not available on this broker and is not pretended at. The password
+  # crosses the LAN in the clear on CONNECT; the mitigation is the account's
+  # scope — it can reach own/${sensor_id}/# and nothing else at all.
+
+  birth_message:
+    topic: own/${sensor_id}/status
+    payload: online
+    qos: 1
+    retain: true
+  will_message:
+    topic: own/${sensor_id}/status
+    payload: offline
+    qos: 1
+    retain: true
+  log_topic: null
+
+  # `meta` goes out when the client is actually CONNECTED, not on a timer after
+  # boot. A publish issued before CONNECT is dropped, and association + DHCP +
+  # CONNECT routinely takes longer than any delay worth guessing — a boot-time
+  # publish is a coin flip. This also republishes meta after a broker restart,
+  # which is the behaviour wanted anyway.
+  on_connect:
+    - script.execute: publish_meta
+
+script:
+  # Retained: what this thing is. A topic dump should answer "what hardware is
+  # this" without anyone reading the YAML.
+  - id: publish_meta
+    then:
+      - mqtt.publish:
+          topic: own/${sensor_id}/meta
+          retain: true
+          qos: 1
+          payload: !lambda |-
+            std::string s = "{\"sensor_id\":\"${sensor_id}\",\"board\":\"esp32-c5\",";
+            s += "\"firmware\":\"" + std::string(ESPHOME_VERSION) + "\",";
+            s += "\"metrics\":[\"temperature\",\"humidity\",\"pressure\"]}";
+            return s;
+
+  # The measurement timestamp. Fired by a reading, never by a timer — the
+  # contract is the time of the MEASUREMENT, not of the publish.
+  #
+  # Guarded on the clock: before SNTP syncs, now() is 1970, and publishing that
+  # would age every reading by fifty-six years. No timestamp is better than a
+  # wrong one — the value still goes out, it just carries no stamp until the
+  # clock is real.
+  - id: stamp_measurement
+    then:
+      - lambda: |-
+          auto t = id(node_time).now();
+          if (!t.is_valid()) {
+            ESP_LOGW("own", "clock not set yet — skipping last_update");
+            return;
+          }
+          char buf[32];
+          t.strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ");
+          id(mqtt_client)->publish(std::string("own/${sensor_id}/last_update"),
+                                   std::string(buf), 1, true);
+
+i2c:
+  sda: GPIO4
+  scl: GPIO5
+
+sensor:
+  - platform: bme280_i2c
+    address: 0x76
+    update_interval: 60s
+
+    temperature:
+      name: "Temperature"
+      state_topic: own/${sensor_id}/temperature
+      accuracy_decimals: 2
+      # Every reading stamps itself. One call after the last metric of the cycle
+      # would do; three is harmless and survives someone deleting a metric from
+      # this list.
+      on_value:
+        - script.execute: stamp_measurement
+
+    humidity:
+      name: "Humidity"
+      state_topic: own/${sensor_id}/humidity
+      accuracy_decimals: 1
+      on_value:
+        - script.execute: stamp_measurement
+
+    pressure:
+      name: "Pressure"
+      state_topic: own/${sensor_id}/pressure
+      accuracy_decimals: 1
+      on_value:
+        - script.execute: stamp_measurement
+
+  - platform: wifi_signal
+    name: "RSSI"
+    state_topic: own/${sensor_id}/rssi
+    update_interval: 300s
+
+  - platform: uptime
+    name: "Uptime"
+    state_topic: own/${sensor_id}/uptime
+    update_interval: 300s
+
+# =============================================================================
+#  Bring-up checklist — in order, and do not skip the negative ones
+# =============================================================================
+#
+#  1. Account exists:
+#       ./scripts/add-mqtt-user.sh ${sensor_id}
+#       docker compose exec mosquitto kill -HUP 1
+#
+#  2. The account is scoped. This must be REFUSED — if it is accepted, the
+#     pattern rule is not doing its job and nothing below matters:
+#       docker run --rm --network host eclipse-mosquitto:2.0.22 \
+#         mosquitto_pub -V 5 -d -h 192.168.1.51 -u ${sensor_id} -P PASSWORD \
+#         -t own/somebody-else/temperature -m 1 -q 1
+#       expect RC:135 Not authorized
+#
+#  3. Flash, then watch the bus rather than the device log:
+#       ./scripts/mqtt-watch.sh own/# 90
+#     Expect: status=online, meta once, three metrics, last_update advancing.
+#
+#  4. last_update must be a real time, not 1970. Missing for the first minute is
+#     correct behaviour, not a bug — see the guard above.
+#
+#  5. Pull the power. Within the keepalive window own/${sensor_id}/status must
+#     read offline. A clean reboot does NOT test this: the will fires only on an
+#     ungraceful disconnect.
+#
+#  6. A fresh subscriber gets the last value immediately (retained):
+#       ./scripts/mqtt-watch.sh own/${sensor_id}/# 5
+#
+#  7. Only now add the entities to packages/own_sensors.yaml, restart Home
+#     Assistant, and run ./scripts/normalize-entity-ids.sh.
+#
+# =============================================================================
+#  Power, stated plainly
+# =============================================================================
+#  This config assumes mains, USB or a decent solar supply. Wi-Fi on an ESP32
+#  costs roughly 100–150 mA while the radio is up; a battery node has to deep
+#  sleep between readings, and even then an 18650 buys weeks to months, not
+#  years. That is what Wi-Fi costs — it is not a defect of the C5.
+#
+#  If a genuinely long-lived battery sensor is wanted, the answer is a different
+#  transport (802.15.4/Thread, which the C5 also has, or a sub-GHz OOK
+#  transmitter the .48 node can hear) rather than a smaller Wi-Fi duty cycle.
+#  That is a separate design and this file does not pretend to be it.

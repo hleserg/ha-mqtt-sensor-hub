@@ -1,0 +1,146 @@
+# =============================================================================
+#  Monitoring
+# =============================================================================
+#  Three things are watched from inside Home Assistant:
+#    * MQTT round-trip  — HA publishes a timestamp and must receive it back
+#    * disk usage       — /config lives on doctor's root filesystem
+#    * broker liveness  — $SYS/broker/uptime, which only a connected client sees
+#
+#  Container health and restart loops are watched from the host instead
+#  (scripts/healthcheck.sh) — Home Assistant has no access to the Docker socket
+#  and giving it one would be a much bigger privilege than this needs.
+# =============================================================================
+
+mqtt:
+  sensor:
+    # Echo of what automation.mqtt_round_trip_probe publishes. If the broker,
+    # the ACL or the connection breaks, this stops advancing.
+    - name: "MQTT Round Trip Echo"
+      unique_id: mqtt_round_trip_echo
+      state_topic: "monitor/roundtrip"
+      device_class: timestamp
+      entity_category: diagnostic
+      device: &stack_device
+        identifiers: ["iot_stack_health"]
+        name: "IoT Stack Health"
+        manufacturer: "hleserg"
+        model: "doctor iot-stack"
+
+    - name: "MQTT Broker Uptime"
+      unique_id: mqtt_broker_uptime
+      state_topic: "$SYS/broker/uptime"
+      value_template: "{{ value.split(' ')[0] | int(0) }}"
+      unit_of_measurement: "s"
+      device_class: duration
+      entity_category: diagnostic
+      device: *stack_device
+
+    - name: "MQTT Broker Clients"
+      unique_id: mqtt_broker_clients
+      state_topic: "$SYS/broker/clients/connected"
+      state_class: measurement
+      icon: mdi:lan-connect
+      entity_category: diagnostic
+      device: *stack_device
+
+    # Published retained by scripts/backup.sh at the end of every run, success
+    # or failure. The point is that a scheduled backup which quietly stops
+    # working should be visible here rather than discovered during a restore.
+    - name: "Backup Last Run"
+      unique_id: backup_last_run
+      state_topic: "monitor/backup/status"
+      value_template: "{{ value_json.finished_at }}"
+      json_attributes_topic: "monitor/backup/status"
+      device_class: timestamp
+      entity_category: diagnostic
+      device: *stack_device
+
+    - name: "Backup Last Result"
+      unique_id: backup_last_result
+      state_topic: "monitor/backup/status"
+      value_template: "{{ value_json.result }}"
+      icon: mdi:backup-restore
+      entity_category: diagnostic
+      device: *stack_device
+
+command_line:
+  - sensor:
+      name: "Doctor Disk Free"
+      unique_id: doctor_disk_free
+      command: "df -P /config | awk 'NR==2 {print $4/1048576}'"
+      unit_of_measurement: "GiB"
+      state_class: measurement
+      scan_interval: 900
+      value_template: "{{ value | float(0) | round(1) }}"
+
+  - sensor:
+      name: "Doctor Disk Used Percent"
+      unique_id: doctor_disk_used_percent
+      command: "df -P /config | awk 'NR==2 {gsub(/%/,\"\",$5); print $5}'"
+      unit_of_measurement: "%"
+      state_class: measurement
+      scan_interval: 900
+      value_template: "{{ value | int(0) }}"
+
+template:
+  - triggers:
+      - trigger: time_pattern
+        seconds: "/30"
+      - trigger: state
+        entity_id: sensor.mqtt_round_trip_echo
+    sensor:
+      - name: "MQTT Round Trip Age"
+        unique_id: mqtt_round_trip_age
+        unit_of_measurement: s
+        device_class: duration
+        state: >
+          {% set t = states('sensor.mqtt_round_trip_echo') %}
+          {% if t in ['unknown', 'unavailable', 'none', ''] or t is none %}
+            {{ none }}
+          {% else %}
+            {% set ts = t | as_datetime %}
+            {{ none if ts is none else [ (now() - ts).total_seconds(), 0 ] | max | round(0) }}
+          {% endif %}
+
+  - triggers:
+      - trigger: time_pattern
+        minutes: "/5"
+      - trigger: state
+        entity_id: sensor.backup_last_run
+    sensor:
+      - name: "Backup Age"
+        unique_id: backup_age
+        unit_of_measurement: s
+        device_class: duration
+        state: >
+          {% set t = states('sensor.backup_last_run') %}
+          {% if t in ['unknown', 'unavailable', 'none', ''] or t is none %}
+            {{ none }}
+          {% else %}
+            {% set ts = t | as_datetime %}
+            {{ none if ts is none else [ (now() - ts).total_seconds(), 0 ] | max | round(0) }}
+          {% endif %}
+
+  - binary_sensor:
+      # The scheduled run is daily at 04:30 (/etc/cron.d/iot-stack-backup).
+      # Two missed days, or any run that reported failure, is a problem. An
+      # unknown state also counts: never having seen a backup is not "fine".
+      - name: "Backup Failing"
+        unique_id: backup_failing
+        device_class: problem
+        state: >
+          {{ states('sensor.backup_last_result') != 'ok'
+             or states('sensor.backup_age') | float(default=999999) > 172800 }}
+
+      # The probe runs every minute; three missed cycles means something broke.
+      - name: "MQTT Round Trip Failing"
+        unique_id: mqtt_round_trip_failing
+        device_class: problem
+        state: >
+          {{ states('sensor.mqtt_round_trip_age') | float(default=9999) > 180 }}
+
+      - name: "Doctor Disk Low"
+        unique_id: doctor_disk_low
+        device_class: problem
+        state: >
+          {{ states('sensor.doctor_disk_used_percent') | float(default=0) > 85 }}

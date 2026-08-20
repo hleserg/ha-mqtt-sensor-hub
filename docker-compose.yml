@@ -1,0 +1,128 @@
+# Doctor IoT stack — Home Assistant + Mosquitto (+ optional rtl_433, weather-engine)
+#
+# Deployed at /home/sergey/iot-stack on doctor (192.168.1.51).
+# Additive only: own compose project, own bridge network. Does not touch the
+# existing `doctor`, `intronet-demo`, `letheclaw` or `mem0` projects.
+#
+#   docker compose up -d                      # core stack (mosquitto + HA)
+#   docker compose --profile rtl433 up -d     # + rtl_433 (needs an RTL-SDR dongle)
+#   docker compose --profile engine up -d     # + weather-engine skeleton
+
+name: iot-stack
+
+services:
+
+  # ---------------------------------------------------------------- broker --
+  mosquitto:
+    image: eclipse-mosquitto:2.0.22
+    container_name: iot-mosquitto
+    restart: unless-stopped
+    stop_grace_period: 10s
+    ports:
+      # Reachable from the whole LAN. Access is narrowed to 192.168.1.0/24 by
+      # firewall/docker-user-lan-only.sh — published Docker ports bypass ufw,
+      # so the restriction lives in the DOCKER-USER iptables chain.
+      - "1883:1883"
+    volumes:
+      - ./mosquitto/config/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./mosquitto/config/acl.conf:/mosquitto/config/acl.conf:ro
+      - ./mosquitto/config/passwd:/mosquitto/config/passwd:ro
+      - mosquitto_data:/mosquitto/data
+      - ./mosquitto/log:/mosquitto/log
+    env_file:
+      - .env
+    environment:
+      - TZ=${TZ:-Europe/Moscow}
+    networks:
+      - iot
+    healthcheck:
+      # Round-trips a real authenticated subscribe against $SYS.
+      test: ["CMD-SHELL", "mosquitto_sub -h 127.0.0.1 -p 1883 -u \"$$MONITOR_MQTT_USER\" -P \"$$MONITOR_MQTT_PASSWORD\" -t '$$SYS/broker/uptime' -C 1 -W 5 >/dev/null 2>&1 || exit 1"]
+      interval: 60s
+      timeout: 15s
+      retries: 3
+      start_period: 20s
+
+  # -------------------------------------------------------- home assistant --
+  homeassistant:
+    # Docker Hub rather than ghcr.io: both registries serve the *identical*
+    # amd64 manifest (verified — same sha256), but ghcr's blob CDN delivers
+    # ~70 KB/s to this connection against ~650 KB/s from Docker Hub. A 625 MiB
+    # image is 2.5 hours one way and 16 minutes the other.
+    image: homeassistant/home-assistant:stable
+    container_name: iot-homeassistant
+    restart: unless-stopped
+    stop_grace_period: 30s
+    # host networking is Home Assistant's documented deployment mode: it is what
+    # makes local discovery (mDNS/SSDP), Bluetooth and the MeshCore USB/BLE
+    # integration work, and it puts port 8123 under the existing ufw rule.
+    network_mode: host
+    privileged: true
+    volumes:
+      - ./homeassistant/config:/config
+      - /etc/localtime:/etc/localtime:ro
+      - /run/dbus:/run/dbus:ro
+    environment:
+      - TZ=${TZ:-Europe/Moscow}
+    depends_on:
+      - mosquitto
+
+  # ---------------------------------------------- optional: RTL-SDR bridge --
+  # Disabled by default. No SDR dongle is attached to doctor right now, and this
+  # service must never block `docker compose up -d` of the core stack.
+  #   docker compose --profile rtl433 up -d
+  rtl_433:
+    image: hertzg/rtl_433:latest
+    container_name: iot-rtl433
+    restart: unless-stopped
+    profiles: ["rtl433"]
+    command: ["-c", "/etc/rtl_433/rtl_433.conf"]
+    volumes:
+      - ./rtl_433/rtl_433.conf:/etc/rtl_433/rtl_433.conf:ro
+    devices:
+      - /dev/bus/usb:/dev/bus/usb
+    environment:
+      - TZ=${TZ:-Europe/Moscow}
+    networks:
+      - iot
+    depends_on:
+      - mosquitto
+
+  # ------------------------------------------------------ weather engine --
+  # Part of the default stack since 2026-08-20, when it stopped being a stub:
+  # it now derives feels_like, frost_risk, ice_risk and data_quality and
+  # publishes them retained under `weather_state/`. Still nothing invented —
+  # condition, rain_risk and thunderstorm remain unpublished (DECISIONS.md
+  # D-012). Nothing in the data path depends on this container: it only reads
+  # `weather/#` and writes `weather_state/#`, so its failure costs derived
+  # values and no measurements.
+  weather-engine:
+    build: ./weather-engine
+    image: iot-stack/weather-engine:dev
+    container_name: iot-weather-engine
+    restart: unless-stopped
+    volumes:
+      - ./weather-engine/config.yaml:/app/config.yaml:ro
+    env_file:
+      - .env
+    environment:
+      - TZ=${TZ:-Europe/Moscow}
+      - MQTT_HOST=mosquitto
+      - MQTT_PORT=1883
+    networks:
+      - iot
+    depends_on:
+      - mosquitto
+
+volumes:
+  # Broker persistence (retained messages + queued QoS>0) survives recreation.
+  mosquitto_data:
+
+networks:
+  iot:
+    name: iot-stack
+    driver: bridge
+    ipam:
+      config:
+        # 172.17-172.23 are already taken by existing projects on doctor.
+        - subnet: 172.28.0.0/24

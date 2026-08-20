@@ -1,0 +1,256 @@
+# =============================================================================
+#  Weather dashboard (YAML mode — reproducible and covered by the backup)
+# =============================================================================
+#  Two views, kept deliberately separate:
+#    * Outdoor  — my own weather station, the authoritative source
+#    * External — opportunistic third-party RF/BLE sensors found on the air
+#  Mixing them would let an unowned sensor of unknown calibration read as if it
+#  were my station.
+# =============================================================================
+
+title: Weather
+
+views:
+  # ------------------------------------------------------------- outdoor ----
+  - title: Outdoor Weather
+    path: outdoor
+    icon: mdi:weather-partly-rainy
+    cards:
+      - type: markdown
+        title: Status
+        content: >
+          ## {{ states('sensor.outdoor_summary') }}
+
+          **Data state:** {{ states('sensor.outdoor_data_state') }}
+          {% set age = states('sensor.outdoor_data_age') | float(default=-1) %}
+          {% if age >= 0 %}
+          — measured {{ (age / 60) | round(0) }} min ago
+          {% else %}
+          — no measurement timestamp received yet
+          {% endif %}
+
+          **Measured at:** {{ states('sensor.outdoor_last_update') }}
+
+          **Source:** {{ state_attr('sensor.outdoor_station_info', 'source') or 'unknown' }}
+          · **Sensor id:** {{ state_attr('sensor.outdoor_station_info', 'sensor_id') or 'unknown' }}
+
+      - type: entities
+        title: Now
+        state_color: true
+        entities:
+          - entity: sensor.outdoor_temperature
+            name: Temperature
+          - entity: sensor.outdoor_humidity
+            name: Humidity
+          - entity: sensor.outdoor_dew_point
+            name: Dew point
+          - entity: sensor.outdoor_pressure
+            name: Pressure
+          - entity: sensor.outdoor_pressure_tendency
+            name: Pressure trend
+          - entity: sensor.outdoor_pressure_trend
+            name: Trend, hPa/h
+          - type: divider
+          - entity: sensor.outdoor_wind_speed
+            name: Wind
+          - entity: sensor.outdoor_wind_gust
+            name: Gust
+          - type: divider
+          - entity: sensor.outdoor_rain
+            name: Rain, total
+          - entity: sensor.outdoor_rain_rate
+            name: Rain rate
+          - entity: sensor.outdoor_cloud_index
+            name: Cloud index
+          - entity: sensor.outdoor_lightning_distance
+            name: Lightning distance
+
+      - type: entities
+        title: Data quality
+        entities:
+          - entity: sensor.outdoor_data_state
+            name: State
+          - entity: sensor.outdoor_data_age
+            name: Age of measurement
+          - entity: sensor.outdoor_last_update
+            name: Measured at
+          - entity: binary_sensor.outdoor_station_connected
+            name: Broker connection (LWT)
+          - entity: binary_sensor.outdoor_data_fresh
+            name: Freshness problem
+          - type: divider
+          - entity: input_number.outdoor_stale_after
+            name: Stale after
+          - entity: input_number.outdoor_offline_after
+            name: Offline after
+
+      - type: history-graph
+        title: Temperature & dew point (24 h)
+        hours_to_show: 24
+        entities:
+          - sensor.outdoor_temperature
+          - sensor.outdoor_dew_point
+
+      - type: history-graph
+        title: Pressure (48 h)
+        hours_to_show: 48
+        entities:
+          - sensor.outdoor_pressure
+
+      - type: history-graph
+        title: Wind & rain (24 h)
+        hours_to_show: 24
+        entities:
+          - sensor.outdoor_wind_speed
+          - sensor.outdoor_wind_gust
+          - sensor.outdoor_rain_rate
+
+      - type: entities
+        title: Derived state (weather-engine)
+        entities:
+          - entity: sensor.weather_state_condition
+            name: Condition
+          - entity: sensor.weather_state_feels_like
+            name: Feels like
+          - entity: sensor.weather_state_rain_risk
+            name: Rain risk
+          - entity: sensor.weather_state_frost_risk
+            name: Frost risk
+          - entity: sensor.weather_state_ice_risk
+            name: Ice risk
+          - entity: binary_sensor.weather_state_thunderstorm
+            name: Thunderstorm approaching
+          - entity: sensor.weather_state_data_quality
+            name: Data quality
+
+  # ------------------------------------------------------------ external ----
+  - title: External Sensors
+    path: external
+    icon: mdi:radar
+    cards:
+      - type: markdown
+        title: About this view
+        content: >
+          Third-party environmental sensors picked up over 433/868 MHz or BLE.
+          **Not** my weather station — calibration, siting and ownership are all
+          unknown. Nothing here feeds the weather engine unless explicitly
+          referenced.
+
+          New devices appear below only after being allow-listed.
+
+      - type: entities
+        title: Discovery
+        entities:
+          - entity: sensor.rf_last_discovered
+            name: Last discovered device
+          - entity: sensor.rf_collector_status
+            name: Collector status
+          - type: divider
+          - entity: input_text.rf_enable_collector
+            name: Collector
+          - entity: input_text.rf_enable_device_id
+            name: Device id
+          - entity: input_text.rf_enable_alias
+            name: Alias
+          - type: divider
+          - entity: script.rf_enable_sensor
+            name: Enable this device
+          - entity: script.rf_disable_sensor
+            name: Disable this device
+
+      # Allow-listed sensors arrive through MQTT Discovery. Until one exists,
+      # this card shows the raw fields of the most recent announcement.
+      - type: entities
+        title: Last announcement detail
+        entities:
+          - type: attribute
+            entity: sensor.rf_last_discovered
+            attribute: source
+            name: Source
+          - type: attribute
+            entity: sensor.rf_last_discovered
+            attribute: protocol
+            name: Protocol
+          - type: attribute
+            entity: sensor.rf_last_discovered
+            attribute: temperature_c
+            name: Temperature
+          - type: attribute
+            entity: sensor.rf_last_discovered
+            attribute: humidity_pct
+            name: Humidity
+          - type: attribute
+            entity: sensor.rf_last_discovered
+            attribute: rssi
+            name: RSSI
+          - type: attribute
+            entity: sensor.rf_last_discovered
+            attribute: battery_low
+            name: Battery low
+          - type: attribute
+            entity: sensor.rf_last_discovered
+            attribute: timestamp
+            name: Last seen
+
+      - type: markdown
+        content: >
+          Enabled sensors show up as their own devices under
+          **Settings → Devices & Services → MQTT**, each with temperature,
+          humidity, RSSI, battery and last-seen entities. Add them to this view
+          once they exist — see `SENSORS.md`.
+
+  # ----------------------------------------------------------- diagnostics --
+  - title: Stack Health
+    path: health
+    icon: mdi:heart-pulse
+    cards:
+      - type: entities
+        title: MQTT
+        entities:
+          - entity: sensor.mqtt_round_trip_echo
+            name: Round trip echo
+          - entity: sensor.mqtt_round_trip_age
+            name: Round trip age
+          - entity: binary_sensor.mqtt_round_trip_failing
+            name: Round trip failing
+          - entity: sensor.mqtt_broker_uptime
+            name: Broker uptime
+          - entity: sensor.mqtt_broker_clients
+            name: Connected clients
+
+      - type: entities
+        title: Doctor
+        entities:
+          - entity: sensor.doctor_disk_free
+            name: Disk free
+          - entity: sensor.doctor_disk_used_percent
+            name: Disk used
+          - entity: binary_sensor.doctor_disk_low
+            name: Disk low
+
+  # ------------------------------------------------------------- meshcore ---
+  - title: MeshCore
+    path: meshcore
+    icon: mdi:radio-tower
+    cards:
+      - type: markdown
+        content: >
+          Telemetry arriving over the MeshCore mesh. Node entities are created
+          by the `meshcore` integration once a Companion is attached to doctor;
+          the entities below are the normalized MQTT mirror. See `MESHCORE.md`.
+
+      - type: entities
+        title: Sensor node 1
+        entities:
+          - entity: sensor.meshcore_node_temperature
+            name: Temperature
+          - entity: sensor.meshcore_node_humidity
+            name: Humidity
+          - entity: sensor.meshcore_node_pressure
+            name: Pressure
+          - entity: sensor.meshcore_node_battery
+            name: Battery
+          - entity: sensor.meshcore_node_rssi
+            name: RSSI
+          - entity: sensor.meshcore_node_last_seen
+            name: Last seen

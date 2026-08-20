@@ -1,0 +1,30 @@
+# --- secrets: never commit ---
+.env
+secrets.env
+mqtt-credentials.txt
+mosquitto/config/passwd
+mosquitto/config/passwd.*
+homeassistant/config/secrets.yaml
+weather-engine/config.yaml
+
+# --- runtime / persistent data ---
+mosquitto/data/
+mosquitto/log/
+homeassistant/config/.storage/
+homeassistant/config/home-assistant_v2.db*
+homeassistant/config/home-assistant.log*
+homeassistant/config/.cloud/
+homeassistant/config/tts/
+homeassistant/config/deps/
+homeassistant/config/custom_components/
+homeassistant/config/backups/
+homeassistant/config/*.db-shm
+homeassistant/config/*.db-wal
+
+# --- local tooling ---
+tools/meshcore-venv/
+__pycache__/
+
+# --- backups ---
+backups/
+*.tar.gz

@@ -1,0 +1,72 @@
+# =============================================================================
+#  External RF/BLE sensors  —  sensors/<collector>/<sensor_id>/<metric>
+# =============================================================================
+#  Third-party sensors found on the air (433/868 MHz, BLE) are deliberately
+#  kept apart from my own weather station. They are opportunistic, unowned and
+#  may vanish at any time; the outdoor station is authoritative.
+#
+#  Entity creation is opt-in, in two stages, so that a busy RF band cannot turn
+#  into hundreds of entities:
+#
+#    1. A collector announces what it hears, at most once a minute per device,
+#       on   sensors/<collector>/_discovered/<device_id>   (NOT retained).
+#       That feeds exactly one Home Assistant entity: "RF Last Discovered".
+#
+#    2. Nothing is created until the device is allow-listed. Enabling is done
+#       from Home Assistant with script.rf_enable_sensor, which publishes a
+#       retained command to  sensors/<collector>/cmd/enable . The collector
+#       persists that list and only then starts publishing
+#         - MQTT Discovery configs under homeassistant/...
+#         - retained state under sensors/<collector>/<device_id>/<metric>
+#
+#  So the allow-list is enforced at the source. Home Assistant never has to
+#  filter a firehose, and a collector reboot cannot resurrect entities that
+#  were never enabled.
+#
+#  Discovery prefix is the standard `homeassistant` — see MQTT.md.
+# =============================================================================
+
+mqtt:
+  sensor:
+    # The survey feed. Non-retained by design: it shows what is on the air now,
+    # not a permanent list.
+    - name: "RF Last Discovered"
+      unique_id: rf_last_discovered
+      state_topic: "sensors/+/_discovered/+"
+      value_template: >
+        {{ value_json.device_id | default('unknown') }}
+      json_attributes_topic: "sensors/+/_discovered/+"
+      icon: mdi:radar
+      entity_category: diagnostic
+      device: &rf_collector_device
+        identifiers: ["rf_ble_collector"]
+        name: "RF/BLE Sensor Collector"
+        manufacturer: "hleserg"
+        model: "Tuya IR/RF remote (repurposed)"
+
+    - name: "RF Collector Status"
+      unique_id: rf_collector_status
+      state_topic: "sensors/+/status"
+      icon: mdi:access-point
+      entity_category: diagnostic
+      device: *rf_collector_device
+
+input_text:
+  # Target for script.rf_enable_sensor.
+  rf_enable_collector:
+    name: RF collector name
+    initial: rf433
+    max: 32
+    icon: mdi:radio-tower
+
+  rf_enable_device_id:
+    name: RF device id to enable
+    initial: ""
+    max: 32
+    icon: mdi:identifier
+
+  rf_enable_alias:
+    name: Alias for the enabled sensor
+    initial: ""
+    max: 64
+    icon: mdi:tag-outline

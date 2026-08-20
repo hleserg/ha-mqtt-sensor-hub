@@ -1,0 +1,18 @@
+# iot-stack — daily full backup.  Installed to /etc/cron.d/iot-stack-backup.
+#
+# Runs as sergey, not root, on purpose: backup.sh re-executes itself through
+# sudo for --full (Home Assistant's .storage holds root-owned mode-600 files),
+# and the sudo path is what hands the finished archive back to the operator.
+# A root cron entry would leave a root-owned archive nobody can copy off the
+# box without sudo.
+#
+# The archive contains every device password in plaintext.  It is written
+# chmod 600 into /mnt/backup/iot-stack, which is a real ext4 mount on /dev/sda1.
+# Retention keeps 14 of each mode; see scripts/backup.sh --keep.
+#
+# Every run publishes its outcome to monitor/backup/status (retained), so a
+# failure shows up in Home Assistant instead of being discovered months later.
+MAILTO=""
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+30 4 * * * sergey /home/sergey/iot-stack/scripts/backup.sh --full >> /home/sergey/iot-stack-backup.log 2>&1

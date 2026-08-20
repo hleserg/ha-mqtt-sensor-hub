@@ -1,0 +1,141 @@
+# Automations. Edit here or in the UI (the UI writes back to this file).
+
+- id: mqtt_round_trip_probe
+  alias: "MQTT round trip probe"
+  description: >
+    Publishes a timestamp to monitor/roundtrip once a minute and expects to
+    receive it back through the broker. sensor.mqtt_round_trip_age measures the
+    delay; binary_sensor.mqtt_round_trip_failing trips after three missed
+    cycles. This is the end-to-end check that HA <-> Mosquitto still works,
+    including authentication and the ACL.
+  mode: single
+  triggers:
+    - trigger: time_pattern
+      minutes: "/1"
+    - trigger: homeassistant
+      event: start
+  actions:
+    - action: mqtt.publish
+      data:
+        topic: monitor/roundtrip
+        payload: "{{ now().isoformat() }}"
+        qos: 0
+        retain: false
+
+- id: outdoor_station_went_stale
+  alias: "Outdoor station went stale or offline"
+  description: >
+    Logs a persistent notification when the outdoor weather station stops
+    reporting, so a silent sensor is never mistaken for calm weather.
+  mode: single
+  triggers:
+    - trigger: state
+      entity_id: sensor.outdoor_data_state
+      to: ["stale", "offline"]
+      for: "00:02:00"
+  actions:
+    - action: persistent_notification.create
+      data:
+        title: "Outdoor weather station: {{ states('sensor.outdoor_data_state') }}"
+        message: >
+          No fresh measurement for
+          {{ (states('sensor.outdoor_data_age') | float(0) / 60) | round(0) }} minutes.
+          Last measurement timestamp: {{ states('sensor.outdoor_last_update') }}.
+        notification_id: outdoor_station_stale
+
+- id: outdoor_station_recovered
+  alias: "Outdoor station recovered"
+  mode: single
+  triggers:
+    - trigger: state
+      entity_id: sensor.outdoor_data_state
+      to: "fresh"
+  actions:
+    - action: persistent_notification.dismiss
+      data:
+        notification_id: outdoor_station_stale
+
+
+- id: meshcore_mqtt_mirror
+  alias: "MeshCore -> MQTT mirror"
+  description: >
+    Republishes an allow-list of MeshCore node telemetry from the integration's
+    entities into meshcore/<node_id>/<metric>, retained, so consumers that have
+    no Home Assistant account (ESP32 watches, shell scripts) can read mesh
+    telemetry from the broker. The radio is owned by the integration inside HA,
+    so HA is necessarily the publisher here -- see DECISIONS.md D-011.
+
+    Nodes are discovered from the entity ids rather than configured, so swapping
+    the Companion (the T114 handover) needs no edit here: a new public key
+    simply starts publishing under its own node id. Metrics are an explicit
+    list, never a loop over sensor.meshcore_*, because the integration exposes
+    ~190 entities on a busy mesh.
+
+    A metric whose state is unknown or unavailable is skipped rather than
+    published: writing "unknown" into a retained topic would destroy the last
+    good value that consumers rely on.
+  mode: single
+  max_exceeded: silent
+  triggers:
+    - trigger: time_pattern
+      minutes: "/1"
+    - trigger: homeassistant
+      event: start
+  actions:
+    - variables:
+        jobs: |-
+          {%- set BAD = ['unknown', 'unavailable', 'none', 'None', ''] -%}
+          {%- set METRICS = [('battery', 'battery_percentage'),
+                             ('battery_voltage', 'battery_voltage'),
+                             ('status', 'node_status')] -%}
+          {%- set RADIO = [('frequency_mhz', 'frequency'),
+                           ('spreading_factor', 'spreading_factor'),
+                           ('bandwidth_khz', 'bandwidth'),
+                           ('tx_power_dbm', 'tx_power')] -%}
+          {%- set ns = namespace(ids=[], jobs=[]) -%}
+          {%- for s in states.sensor -%}
+            {%- set m = s.entity_id | regex_findall('^sensor\.meshcore_([0-9a-f]{6})_battery_voltage') -%}
+            {%- if m and m[0] not in ns.ids -%}{%- set ns.ids = ns.ids + [m[0]] -%}{%- endif -%}
+          {%- endfor -%}
+          {%- for node in ns.ids -%}
+            {%- set n = namespace(fresh=none, meta={}, any=false, anchor=none) -%}
+            {%- for leaf, src in METRICS -%}
+              {%- set cand = states.sensor | map(attribute='entity_id')
+                             | select('search', '^sensor\.meshcore_' ~ node ~ '_' ~ src ~ '(_|$)') | list -%}
+              {%- if cand and states(cand[0]) not in BAD -%}
+                {%- set ns.jobs = ns.jobs + [{'t': 'meshcore/' ~ node ~ '/' ~ leaf, 'p': states(cand[0])}] -%}
+                {%- set lu = states[cand[0]].last_updated -%}
+                {%- if n.fresh is none or lu > n.fresh -%}{%- set n.fresh = lu -%}{%- endif -%}
+                {%- set n.any = true -%}
+                {%- set n.anchor = cand[0] -%}
+              {%- endif -%}
+            {%- endfor -%}
+            {%- if n.any -%}
+              {%- for key, src in RADIO -%}
+                {%- set cand = states.sensor | map(attribute='entity_id')
+                               | select('search', '^sensor\.meshcore_' ~ node ~ '_' ~ src ~ '(_|$)') | list -%}
+                {%- if cand and states(cand[0]) not in BAD -%}
+                  {%- set n.meta = n.meta | combine({key: states(cand[0]) | float(default=0)}) -%}
+                {%- endif -%}
+              {%- endfor -%}
+              {%- set n.meta = n.meta | combine({
+                    'node_id': node,
+                    'name': device_attr(n.anchor, 'name_by_user') or device_attr(n.anchor, 'name') or node,
+                    'source': 'meshcore-ha',
+                    'transport': 'tcp'}) -%}
+              {%- set ns.jobs = ns.jobs + [{'t': 'meshcore/' ~ node ~ '/meta', 'p': n.meta | tojson}] -%}
+              {%- if n.fresh is not none -%}
+                {%- set ns.jobs = ns.jobs + [{'t': 'meshcore/' ~ node ~ '/last_seen', 'p': n.fresh.isoformat()}] -%}
+              {%- endif -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ ns.jobs | tojson }}
+    - repeat:
+        for_each: "{{ jobs }}"
+        sequence:
+          - action: mqtt.publish
+            data:
+              topic: "{{ repeat.item.t }}"
+              payload: "{{ repeat.item.p }}"
+              qos: 1
+              retain: true

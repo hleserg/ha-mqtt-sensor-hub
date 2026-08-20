@@ -1,0 +1,14 @@
+[Unit]
+Description=iot-stack: restrict published MQTT port to the LAN (DOCKER-USER chain)
+Documentation=file:/home/sergey/iot-stack/README.md
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/home/sergey/iot-stack/firewall/docker-user-lan-only.sh apply
+ExecStop=/home/sergey/iot-stack/firewall/docker-user-lan-only.sh remove
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,121 @@
+# =============================================================================
+#  Data quality / freshness
+# =============================================================================
+#  Rule: a value is never presented as current without its age.
+#
+#  Every physical source carries four things (see MQTT.md):
+#    * measurement timestamp  — published by the node   -> weather/outdoor/last_update
+#    * reception timestamp    — when Home Assistant saw it (last_changed, built in)
+#    * source + sensor id     — weather/outdoor/meta
+#    * last seen / state      — computed below as fresh | stale | offline
+#
+#  Age is measured from the *measurement* timestamp, not from reception: a
+#  buffered node can deliver a reading that is an hour old, and by reception
+#  time that would look perfectly fresh.
+# =============================================================================
+
+input_number:
+  outdoor_stale_after:
+    name: Outdoor sensor stale after
+    min: 60
+    max: 86400
+    step: 60
+    initial: 900          # 15 min without a fresh measurement -> stale
+    unit_of_measurement: s
+    icon: mdi:timer-sand
+    mode: box
+
+  outdoor_offline_after:
+    name: Outdoor sensor offline after
+    min: 120
+    max: 604800
+    step: 60
+    initial: 3600         # 1 hour -> treat the station as offline
+    unit_of_measurement: s
+    icon: mdi:timer-off
+    mode: box
+
+template:
+  # Re-evaluated every 30 s, and immediately whenever a new measurement lands,
+  # so the age keeps counting up while the station is silent.
+  - triggers:
+      - trigger: time_pattern
+        seconds: "/30"
+      - trigger: state
+        entity_id: sensor.outdoor_last_update
+    sensor:
+      - name: "Outdoor Data Age"
+        unique_id: outdoor_data_age
+        unit_of_measurement: s
+        device_class: duration
+        state_class: measurement
+        icon: mdi:clock-alert-outline
+        state: >
+          {% set t = states('sensor.outdoor_last_update') %}
+          {% if t in ['unknown', 'unavailable', 'none', ''] or t is none %}
+            {{ none }}
+          {% else %}
+            {% set ts = t | as_datetime %}
+            {% if ts is none %}
+              {{ none }}
+            {% else %}
+              {{ [ (now() - ts).total_seconds(), 0 ] | max | round(0) }}
+            {% endif %}
+          {% endif %}
+
+      - name: "Outdoor Data State"
+        unique_id: outdoor_data_state
+        icon: >
+          {% set s = states('sensor.outdoor_data_state') %}
+          {% if s == 'fresh' %}mdi:check-circle
+          {% elif s == 'stale' %}mdi:alert-circle
+          {% else %}mdi:close-circle{% endif %}
+        # fresh  — value may be shown as current
+        # stale  — value must be shown together with its age
+        # offline— value must not be presented as the current weather at all
+        state: >
+          {% set age = states('sensor.outdoor_data_age') | float(default=-1) %}
+          {% set stale_after = states('input_number.outdoor_stale_after') | float(default=900) %}
+          {% set offline_after = states('input_number.outdoor_offline_after') | float(default=3600) %}
+          {% if age < 0 %}
+            offline
+          {% elif age <= stale_after %}
+            fresh
+          {% elif age <= offline_after %}
+            stale
+          {% else %}
+            offline
+          {% endif %}
+        attributes:
+          age_seconds: "{{ states('sensor.outdoor_data_age') }}"
+          measured_at: "{{ states('sensor.outdoor_last_update') }}"
+          received_at: "{{ states.sensor.outdoor_temperature.last_changed if states.sensor.outdoor_temperature is not none else none }}"
+          source: "{{ state_attr('sensor.outdoor_station_info', 'source') | default('unknown') }}"
+          sensor_id: "{{ state_attr('sensor.outdoor_station_info', 'sensor_id') | default('unknown') }}"
+
+  # Plain, non-triggered helpers.
+  - binary_sensor:
+      - name: "Outdoor Data Fresh"
+        unique_id: outdoor_data_fresh
+        device_class: problem
+        # `problem` is on when something is wrong: on == data is NOT fresh.
+        state: "{{ states('sensor.outdoor_data_state') != 'fresh' }}"
+        attributes:
+          data_state: "{{ states('sensor.outdoor_data_state') }}"
+
+    sensor:
+      # A single line safe to render on a watch face or a dashboard header.
+      - name: "Outdoor Summary"
+        unique_id: outdoor_summary
+        icon: mdi:text-short
+        state: >
+          {% set st = states('sensor.outdoor_data_state') %}
+          {% set t = states('sensor.outdoor_temperature') %}
+          {% set age = states('sensor.outdoor_data_age') | float(default=-1) %}
+          {% if st == 'offline' or t in ['unknown','unavailable'] %}
+            no data
+          {% elif st == 'fresh' %}
+            {{ t }} °C
+          {% else %}
+            {{ t }} °C ({{ (age / 60) | round(0) }} min old)
+          {% endif %}

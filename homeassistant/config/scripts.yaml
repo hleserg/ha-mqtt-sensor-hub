@@ -1,0 +1,55 @@
+# Scripts. Edit here or in the UI (the UI writes back to this file).
+
+rf_enable_sensor:
+  alias: "RF: enable an external sensor"
+  icon: mdi:radar
+  description: >
+    Adds a discovered RF/BLE device to the collector's allow-list. Fill in the
+    three input_text helpers first (collector, device id, alias), then run this.
+
+    The command is published retained on a per-device topic, so the complete
+    allow-list replays to the collector every time it reconnects — the
+    collector needs no storage of its own and no server-side component.
+  mode: single
+  sequence:
+    - variables:
+        collector: "{{ states('input_text.rf_enable_collector') | trim }}"
+        device_id: "{{ states('input_text.rf_enable_device_id') | trim }}"
+        sensor_alias: "{{ states('input_text.rf_enable_alias') | trim }}"
+    - condition: template
+      value_template: "{{ collector != '' and device_id != '' }}"
+    - action: mqtt.publish
+      data:
+        topic: "sensors/{{ collector }}/cmd/enable/{{ device_id }}"
+        payload: >
+          {{ {'device_id': device_id, 'enabled': true,
+              'alias': sensor_alias if sensor_alias != '' else device_id} | to_json }}
+        qos: 1
+        retain: true
+    - action: persistent_notification.create
+      data:
+        title: "RF sensor enabled"
+        message: >
+          {{ device_id }} on collector {{ collector }} is now allow-listed.
+          Entities appear as soon as the collector publishes its discovery config.
+
+rf_disable_sensor:
+  alias: "RF: disable an external sensor"
+  icon: mdi:radar-off
+  description: >
+    Removes a device from the allow-list by clearing its retained command.
+    An empty retained payload deletes the message from the broker entirely, so
+    the device is not re-enabled on the next collector reconnect.
+  mode: single
+  sequence:
+    - variables:
+        collector: "{{ states('input_text.rf_enable_collector') | trim }}"
+        device_id: "{{ states('input_text.rf_enable_device_id') | trim }}"
+    - condition: template
+      value_template: "{{ collector != '' and device_id != '' }}"
+    - action: mqtt.publish
+      data:
+        topic: "sensors/{{ collector }}/cmd/enable/{{ device_id }}"
+        payload: ""
+        qos: 1
+        retain: true

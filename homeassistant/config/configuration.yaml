@@ -1,0 +1,89 @@
+# =============================================================================
+#  Home Assistant — doctor (192.168.1.51), iot-stack
+# =============================================================================
+#  Everything domain-specific lives in packages/ so a subsystem can be added or
+#  removed as one file. The MQTT *broker connection* is deliberately not here:
+#  Home Assistant stores it as a config entry (Settings > Devices & Services),
+#  not in YAML.
+# =============================================================================
+
+default_config:
+
+homeassistant:
+  name: Doctor
+  time_zone: Europe/Moscow
+  packages: !include_dir_named packages
+
+# --------------------------------------------------------------- history -----
+# Weather history has to survive for months: it is the training data for the
+# local rain-forecast model later on. So the recorder keeps a long window, and
+# noise is kept out by recording only what is worth keeping rather than by
+# purging early.
+#
+# The recorder is NOT the system of record — MQTT is. Every measurement is a
+# retained MQTT message first, which is what lets InfluxDB / TimescaleDB /
+# VictoriaMetrics be added later as just another subscriber, with no change to
+# any publisher. See ARCHITECTURE.md.
+recorder:
+  purge_keep_days: 400
+  commit_interval: 5
+  include:
+    domains:
+      - sensor
+      - binary_sensor
+      - weather
+  exclude:
+    entity_globs:
+      - sensor.*_data_age          # derived every second, recomputable
+      - sensor.iot_*_uptime
+      # The MeshCore integration creates one diagnostic binary_sensor per
+      # contact in the node's address book -- 168 of them on this mesh, all
+      # permanently unavailable because the coordinator does not carry the
+      # contact data they look for. They are junk in the recorder whether or
+      # not that is ever fixed upstream, and the count grows with the mesh.
+      # DECISIONS.md D-002.
+      - binary_sensor.meshcore_*_contact
+      # Mirror freshness: last_seen moves on every integration poll and age is
+      # recomputed every minute. Both are recomputable; the history that
+      # matters is binary_sensor.meshcore_mirror_stale, which is kept.
+      - sensor.meshcore_mirror_last_seen
+      - sensor.meshcore_mirror_age
+    entities:
+      # Same measurement timestamp as sensor.outdoor_last_update, which is
+      # already recorded -- keeping both would store one fact twice.
+      - sensor.weather_state_computed_at
+      - sensor.date
+      - sensor.time
+
+# Long-term statistics (5-minute and hourly rollups, kept forever for sensors
+# with state_class) come from default_config and need no configuration.
+
+# --------------------------------------------------- future time-series DB ---
+# Uncomment and fill in after standing up InfluxDB; no publisher changes needed.
+#
+# influxdb:
+#   host: influxdb
+#   port: 8086
+#   database: homeassistant
+#   username: !secret influxdb_user
+#   password: !secret influxdb_password
+#   max_retries: 3
+#   include:
+#     entity_globs:
+#       - sensor.outdoor_*
+#       - sensor.weather_state_*
+
+# Dashboards are defined in YAML so they are reproducible and backed up.
+lovelace:
+  mode: storage
+  dashboards:
+    iot-weather:
+      mode: yaml
+      title: Weather
+      icon: mdi:weather-partly-rainy
+      show_in_sidebar: true
+      filename: dashboards/weather.yaml
+
+automation: !include automations.yaml
+script: !include scripts.yaml
+scene: !include scenes.yaml

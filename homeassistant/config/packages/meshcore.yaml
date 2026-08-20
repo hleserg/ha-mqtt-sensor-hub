@@ -1,0 +1,101 @@
+# =============================================================================
+#  MeshCore  —  meshcore/#
+# =============================================================================
+#  The radio itself is owned by the supported HACS integration
+#  `meshcore-dev/meshcore-ha`, which talks to a MeshCore Companion over
+#  USB / BLE / TCP and creates its own entities. Nothing here re-implements the
+#  MeshCore protocol — see MESHCORE.md.
+#
+#  Because the integration lives *inside* Home Assistant, HA is the only
+#  process on this host that can see mesh telemetry at all. That inverts the
+#  usual direction of this stack: for every other source MQTT is upstream of
+#  HA, here HA is upstream of MQTT. The automation "MeshCore -> MQTT mirror"
+#  in automations.yaml republishes an explicit allow-list of node metrics into
+#  meshcore/<node_id>/<metric>, so an ESP32 watch or a shell script can read
+#  mesh telemetry without a Home Assistant account. See DECISIONS.md D-011.
+#
+#  An allow-list, not a loop over sensor.meshcore_*: the integration exposes
+#  ~190 entities on a busy mesh, and mirroring all of them would move an
+#  entity explosion into topic space.
+#
+#  What is deliberately NOT mirrored:
+#    temperature / humidity / pressure — this node carries no environmental
+#      sensor. Publishing empty topics for them would be inventing data.
+#    rssi — a property of one received packet, not of a node. It belongs in
+#      radio/raw/meshcore/… with the packet that carried it (MQTT.md §12).
+#    latitude / longitude — already in HA via device_tracker; no consumer of
+#      the bus needs the house coordinates retained on it.
+#    the 168 discovered contacts — DECISIONS.md D-002.
+#
+#  There are deliberately no mirrored *measurement* entities here: battery and
+#  status are already visible as the integration's own entities, and a second
+#  copy in the UI would only invite the question of which one is real. What
+#  this package does add is the one thing the integration cannot tell you —
+#  whether the MQTT copy is still current.
+# =============================================================================
+
+mqtt:
+  sensor:
+    # Written by the mirror automation, retained. Its age is the health signal
+    # for the mirror itself: the integration can be perfectly happy while the
+    # automation is broken, and nothing else would notice.
+    - name: "MeshCore Mirror Last Seen"
+      unique_id: meshcore_mirror_last_seen
+      state_topic: "meshcore/044e2d/last_seen"
+      device_class: timestamp
+      icon: mdi:radio-tower
+      entity_category: diagnostic
+      device: &meshcore_mirror
+        identifiers: ["meshcore_mirror"]
+        name: "MeshCore MQTT Mirror"
+        manufacturer: "iot-stack"
+        model: "HA -> MQTT telemetry mirror"
+
+    - name: "MeshCore Mirror Node"
+      unique_id: meshcore_mirror_node
+      state_topic: "meshcore/044e2d/meta"
+      value_template: "{{ value_json.node_id }}"
+      json_attributes_topic: "meshcore/044e2d/meta"
+      icon: mdi:card-account-details-outline
+      entity_category: diagnostic
+      device: *meshcore_mirror
+
+template:
+  - triggers:
+      - trigger: time_pattern
+        minutes: "/1"
+      - trigger: state
+        entity_id: sensor.meshcore_mirror_last_seen
+    sensor:
+      - name: "MeshCore Mirror Age"
+        unique_id: meshcore_mirror_age
+        unit_of_measurement: s
+        device_class: duration
+        state: >
+          {% set t = states('sensor.meshcore_mirror_last_seen') %}
+          {% if t in ['unknown', 'unavailable', 'none', ''] or t is none %}
+            {{ none }}
+          {% else %}
+            {% set ts = t | as_datetime %}
+            {{ none if ts is none else [ (now() - ts).total_seconds(), 0 ] | max | round(0) }}
+          {% endif %}
+
+  - binary_sensor:
+      # Ten minutes, and the number is derived rather than chosen: the node's
+      # `self_telemetry_interval` is 300 s and the mirror runs every 60 s, so a
+      # perfectly healthy chain can legitimately show an age of ~360 s. A 300 s
+      # threshold would have alarmed on that. 600 s clears the worst legitimate
+      # case with margin and still notices a dead mirror within ten minutes,
+      # which is fine — nothing automatic acts on this sensor.
+      #
+      # An unknown age counts as stale: a mirror that has never published is not
+      # "fine", it is a mirror that does not work. The visible consequence is a
+      # short `on` blip after every Home Assistant restart, lasting until the
+      # first mirror run — same deliberate semantics as `backup_failing`.
+      - name: "MeshCore Mirror Stale"
+        unique_id: meshcore_mirror_stale
+        device_class: problem
+        state: >
+          {{ states('sensor.meshcore_mirror_age') | float(default=999999) > 600 }}
+        attributes:
+          age_seconds: "{{ states('sensor.meshcore_mirror_age') }}"

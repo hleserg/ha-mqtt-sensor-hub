@@ -1,0 +1,175 @@
+# =============================================================================
+#  My own outdoor weather sensors  —  weather/outdoor/#
+# =============================================================================
+#  One retained MQTT topic per metric (see MQTT.md). Plain numeric
+#  payloads, so an ESP32-S3 watch can subscribe to the same topics and use the
+#  value directly without parsing JSON.
+#
+#  These are declared in YAML rather than via MQTT Discovery on purpose: this is
+#  the primary weather station, its entity ids must be stable forever, and it
+#  must not depend on a collector being online to exist in Home Assistant.
+#
+#  Availability comes from the collector's LWT on weather/outdoor/status.
+#  Freshness (fresh / stale / offline) is handled in data_quality.yaml.
+# =============================================================================
+
+mqtt:
+  sensor:
+    - name: "Outdoor Temperature"
+      unique_id: outdoor_temperature
+      state_topic: "weather/outdoor/temperature"
+      unit_of_measurement: "°C"
+      device_class: temperature
+      state_class: measurement
+      suggested_display_precision: 1
+      availability_topic: "weather/outdoor/status"
+      payload_available: "online"
+      payload_not_available: "offline"
+      device: &outdoor_station
+        identifiers: ["weather_outdoor"]
+        name: "Outdoor Weather Station"
+        manufacturer: "hleserg"
+        model: "DIY outdoor weather sensors"
+
+    - name: "Outdoor Humidity"
+      unique_id: outdoor_humidity
+      state_topic: "weather/outdoor/humidity"
+      unit_of_measurement: "%"
+      device_class: humidity
+      state_class: measurement
+      suggested_display_precision: 0
+      availability_topic: "weather/outdoor/status"
+      payload_available: "online"
+      payload_not_available: "offline"
+      device: *outdoor_station
+
+    - name: "Outdoor Pressure"
+      unique_id: outdoor_pressure
+      state_topic: "weather/outdoor/pressure"
+      unit_of_measurement: "hPa"
+      device_class: atmospheric_pressure
+      state_class: measurement
+      suggested_display_precision: 1
+      availability_topic: "weather/outdoor/status"
+      payload_available: "online"
+      payload_not_available: "offline"
+      device: *outdoor_station
+
+    - name: "Outdoor Dew Point"
+      unique_id: outdoor_dew_point
+      state_topic: "weather/outdoor/dew_point"
+      unit_of_measurement: "°C"
+      device_class: temperature
+      state_class: measurement
+      suggested_display_precision: 1
+      availability_topic: "weather/outdoor/status"
+      payload_available: "online"
+      payload_not_available: "offline"
+      device: *outdoor_station
+
+    - name: "Outdoor Wind Speed"
+      unique_id: outdoor_wind_speed
+      state_topic: "weather/outdoor/wind_speed"
+      unit_of_measurement: "m/s"
+      device_class: wind_speed
+      state_class: measurement
+      suggested_display_precision: 1
+      availability_topic: "weather/outdoor/status"
+      payload_available: "online"
+      payload_not_available: "offline"
+      device: *outdoor_station
+
+    - name: "Outdoor Wind Gust"
+      unique_id: outdoor_wind_gust
+      state_topic: "weather/outdoor/wind_gust"
+      unit_of_measurement: "m/s"
+      device_class: wind_speed
+      state_class: measurement
+      suggested_display_precision: 1
+      availability_topic: "weather/outdoor/status"
+      payload_available: "online"
+      payload_not_available: "offline"
+      device: *outdoor_station
+
+    # Cumulative rainfall counter. total_increasing lets Home Assistant derive
+    # per-hour / per-day rainfall statistics and survive a counter reset.
+    - name: "Outdoor Rain"
+      unique_id: outdoor_rain
+      state_topic: "weather/outdoor/rain"
+      unit_of_measurement: "mm"
+      device_class: precipitation
+      state_class: total_increasing
+      suggested_display_precision: 1
+      availability_topic: "weather/outdoor/status"
+      payload_available: "online"
+      payload_not_available: "offline"
+      device: *outdoor_station
+
+    - name: "Outdoor Rain Rate"
+      unique_id: outdoor_rain_rate
+      state_topic: "weather/outdoor/rain_rate"
+      unit_of_measurement: "mm/h"
+      device_class: precipitation_intensity
+      state_class: measurement
+      suggested_display_precision: 1
+      availability_topic: "weather/outdoor/status"
+      payload_available: "online"
+      payload_not_available: "offline"
+      device: *outdoor_station
+
+    # 0 = clear sky, 100 = fully overcast. Derived by the sensor node from its
+    # sky/IR or illuminance reading; no device_class fits, so it is a plain %.
+    - name: "Outdoor Cloud Index"
+      unique_id: outdoor_cloud_index
+      state_topic: "weather/outdoor/cloud_index"
+      unit_of_measurement: "%"
+      state_class: measurement
+      icon: mdi:cloud-percent
+      suggested_display_precision: 0
+      availability_topic: "weather/outdoor/status"
+      payload_available: "online"
+      payload_not_available: "offline"
+      device: *outdoor_station
+
+    - name: "Outdoor Lightning Distance"
+      unique_id: outdoor_lightning_distance
+      state_topic: "weather/outdoor/lightning_distance"
+      unit_of_measurement: "km"
+      device_class: distance
+      state_class: measurement
+      icon: mdi:flash
+      suggested_display_precision: 0
+      availability_topic: "weather/outdoor/status"
+      payload_available: "online"
+      payload_not_available: "offline"
+      device: *outdoor_station
+
+    # ISO-8601 timestamp of the *measurement* (not of reception). This is the
+    # anchor for every freshness calculation in data_quality.yaml.
+    - name: "Outdoor Last Update"
+      unique_id: outdoor_last_update
+      state_topic: "weather/outdoor/last_update"
+      device_class: timestamp
+      icon: mdi:clock-check-outline
+      device: *outdoor_station
+
+    # Free-form JSON from the node: firmware, sensor ids, battery, uptime.
+    # Kept as one attribute-only sensor so new fields never need a config change.
+    - name: "Outdoor Station Info"
+      unique_id: outdoor_station_info
+      state_topic: "weather/outdoor/meta"
+      value_template: "{{ value_json.source | default('unknown') }}"
+      json_attributes_topic: "weather/outdoor/meta"
+      icon: mdi:information-outline
+      entity_category: diagnostic
+      device: *outdoor_station
+
+  binary_sensor:
+    - name: "Outdoor Station Connected"
+      unique_id: outdoor_station_connected
+      state_topic: "weather/outdoor/status"
+      payload_on: "online"
+      payload_off: "offline"
+      device_class: connectivity
+      entity_category: diagnostic
+      device: *outdoor_station

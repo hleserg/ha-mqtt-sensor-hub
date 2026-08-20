@@ -1,0 +1,164 @@
+# =============================================================================
+#  Derived weather state  —  weather_state/#
+# =============================================================================
+#  Published by the `weather-engine` container. Everything it publishes follows
+#  from a closed-form formula or a written-down rule; everything that would
+#  need a model or history it does not publish at all, and those entities stay
+#  `unknown` on purpose. An empty field is honest; an invented forecast is not.
+#
+#  Publishing today:  feels_like, frost_risk, ice_risk, data_quality,
+#                     computed_at, engine_status
+#  Still `unknown`:   condition, rain_risk, thunderstorm  — see the note at the
+#                     bottom of this file for what each one is waiting for.
+#
+#  Pressure tendency is the exception to "the engine owns derived values": it
+#  is computed here, because Home Assistant already holds the pressure history
+#  and the derivative integration does it correctly. Moving it into the engine
+#  would mean giving the engine its own history store to solve a problem that
+#  is already solved.
+# =============================================================================
+
+mqtt:
+  sensor:
+    - name: "Weather Condition"
+      unique_id: weather_state_condition
+      state_topic: "weather_state/condition"
+      icon: mdi:weather-partly-cloudy
+      device: &weather_engine_device
+        identifiers: ["weather_engine"]
+        name: "Weather Engine"
+        manufacturer: "hleserg"
+        model: "Derived weather state"
+
+    # Wind chill below 10 °C, heat index above ~27 °C, plain air temperature in
+    # between. Which formula produced the current value is in the `meta`
+    # attributes of Weather Data Quality, as `feels_like_method`.
+    - name: "Feels Like"
+      unique_id: weather_state_feels_like
+      state_topic: "weather_state/feels_like"
+      unit_of_measurement: "°C"
+      device_class: temperature
+      state_class: measurement
+      suggested_display_precision: 1
+      device: *weather_engine_device
+
+    - name: "Rain Risk"
+      unique_id: weather_state_rain_risk
+      state_topic: "weather_state/rain_risk"
+      unit_of_measurement: "%"
+      state_class: measurement
+      icon: mdi:weather-rainy
+      suggested_display_precision: 0
+      device: *weather_engine_device
+
+    # ---------------------------------------------------------------------
+    # frost_risk and ice_risk are categorical — none / watch / likely — and
+    # not percentages. They used to be declared as `%` with
+    # `state_class: measurement`, which was wrong: the rules behind them are
+    # thresholds, and a threshold rendered as "70 %" is an if-statement
+    # wearing a probability's clothes. The rules themselves are in
+    # `weather-engine/app/derive.py`, stated in full so they can be argued
+    # with. See DECISIONS.md D-012.
+    # ---------------------------------------------------------------------
+    - name: "Ice Risk"
+      unique_id: weather_state_ice_risk
+      state_topic: "weather_state/ice_risk"
+      icon: mdi:snowflake-alert
+      device: *weather_engine_device
+
+    - name: "Frost Risk"
+      unique_id: weather_state_frost_risk
+      state_topic: "weather_state/frost_risk"
+      icon: mdi:snowflake
+      device: *weather_engine_device
+
+    # ok / partial / degraded / no_data — describes the *inputs*, not the
+    # derivation, which is why it keeps updating while the station is silent.
+    # The `meta` topic carries which inputs were present, which were missing,
+    # their age, and how each output was arrived at.
+    - name: "Weather Data Quality"
+      unique_id: weather_state_data_quality
+      state_topic: "weather_state/data_quality"
+      json_attributes_topic: "weather_state/meta"
+      icon: mdi:check-decagram
+      entity_category: diagnostic
+      device: *weather_engine_device
+
+    # The measurement timestamp the current derivation is based on — not the
+    # time the engine ran. A derivation from a four-hour-old reading reads as
+    # four hours old, which is the entire point.
+    - name: "Weather State Computed At"
+      unique_id: weather_state_computed_at
+      state_topic: "weather_state/computed_at"
+      device_class: timestamp
+      entity_category: diagnostic
+      device: *weather_engine_device
+
+  binary_sensor:
+    - name: "Thunderstorm Approaching"
+      unique_id: weather_state_thunderstorm
+      state_topic: "weather_state/thunderstorm"
+      payload_on: "true"
+      payload_off: "false"
+      device_class: safety
+      icon: mdi:weather-lightning
+      device: *weather_engine_device
+
+    # Driven by the engine's MQTT last-will, so it flips to `on` when the
+    # container dies without a clean shutdown as well as when it is stopped.
+    # It says nothing about the weather station — only about the service.
+    - name: "Weather Engine Offline"
+      unique_id: weather_state_engine_offline
+      state_topic: "weather_state/engine_status"
+      payload_on: "offline"
+      payload_off: "online"
+      device_class: problem
+      entity_category: diagnostic
+      icon: mdi:engine-off
+      device: *weather_engine_device
+
+# --------------------------------------------------------- pressure trend ---
+# hPa per hour, averaged over the last 3 hours — the classic barometric
+# tendency window. Computed locally from my own pressure history.
+sensor:
+  - platform: derivative
+    source: sensor.outdoor_pressure
+    name: "Outdoor Pressure Trend"
+    unique_id: outdoor_pressure_trend
+    unit_time: h
+    time_window: "03:00:00"
+    round: 2
+
+template:
+  - sensor:
+      # Human-readable tendency for the dashboard and the watches.
+      - name: "Outdoor Pressure Tendency"
+        unique_id: outdoor_pressure_tendency
+        icon: mdi:gauge
+        state: >
+          {% set d = states('sensor.outdoor_pressure_trend') | float(default=none) %}
+          {% if d is none %}
+            unknown
+          {% elif d >= 1.0 %} rising fast
+          {% elif d >= 0.3 %} rising
+          {% elif d > -0.3 %} steady
+          {% elif d > -1.0 %} falling
+          {% else %} falling fast
+          {% endif %}
+        attributes:
+          hpa_per_hour: "{{ states('sensor.outdoor_pressure_trend') }}"
+
+# =============================================================================
+#  What is still `unknown`, and what each one is actually waiting for
+# =============================================================================
+#  condition    — needs cloud cover and precipitation type. `cloud_index` is a
+#                 station-dependent number with no agreed scale, and there is
+#                 no way to tell rain from snow from a rain gauge alone.
+#  rain_risk    — a probability. Producing one needs months of local pressure,
+#                 humidity and rainfall history to fit against; the recorder
+#                 holds days. This is precisely the "fictional model" that was
+#                 ruled out, so the field stays empty until the history exists.
+#  thunderstorm — needs a lightning sensor that reports strike *rate*, not just
+#                 distance-to-last-strike. `lightning_distance` alone cannot
+#                 distinguish an approaching cell from a departing one.
+# =============================================================================
