@@ -272,6 +272,44 @@ order of preference and none of them started:
    local server, which is the wrong direction for the one rung that exists to
    work when everything else has failed.
 
+**02:50 the same night — the owner switched the plug on from the app and added
+it to Home Assistant. Both halves changed.**
+
+*The local API is back.* `192.168.1.134` accepts TCP/80 again and
+`GET /status` on tapo-api returns `ok`: `P110`, `server-socket`, `device_on:
+true`, `on_time: 118`, 56 W, RSSI −12. So the hard-reset rung of
+`mc-healthcheck.sh` is functional again without any change to the script. What
+killed it is still not established — the plug kept its Wi-Fi association and
+answered ICMP throughout the nine days, so "it was simply off" does not explain
+it; toggling from the app is what brought the local service back.
+
+*It went in through the built-in `tplink` integration* — the local one, not a
+cloud component. Fifteen entities, including real metering:
+`switch.server_socket`, `sensor.server_socket_voltage` (224.4 V),
+`…_current` (0.34 A), `…_current_consumption` (68.2 W), today's and this
+month's kWh, plus the plug's own auto-off controls.
+
+**The two-owner problem is no longer hypothetical.** `switch.server_socket` and
+`mc-healthcheck.sh` can both cut mains power to a running Minecraft server, and
+neither knows about the other. Nothing is broken today because nothing in Home
+Assistant automates that switch — and that is precisely the property to keep:
+
+- **Home Assistant observes.** The metering entities are the win here: power
+  draw is a genuine signal about the machine behind the plug, and reading it
+  costs nothing. Do not build an automation that toggles `switch.server_socket`.
+- **`mc-healthcheck.sh` stays the only actor.** It owns the escalation ladder;
+  a power cut has to come from the component that knows whether RCON and a
+  graceful restart were tried first.
+- **Leave the plug's own auto-off alone.** `switch.server_socket_auto_off_enabled`
+  is `off` and `number.server_socket_turn_off_in` reads 120. Enabling that would
+  make the plug itself a third owner, on a timer, with no idea what it powers.
+
+**Worth fixing in the script regardless of the above:** the 2026-08-12 event was
+a single-shot `on` that failed and was never retried, and the ladder has no rung
+after the power cut. `on` needs a retry with backoff and an alert when it
+finally fails — the moment it matters is exactly the moment the server is
+already unpowered.
+
 **Not decided yet:** whether the plug's state reaches MQTT from the script, from
 a poller, or from HA in read-only mode; whether it lives under `own/` or a new
 namespace, since it is neither a sensor of mine nor somebody else's transmitter.
