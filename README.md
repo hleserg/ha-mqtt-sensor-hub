@@ -46,7 +46,7 @@ the existing projects.
 ```sh
 cd /home/sergey/iot-stack
 
-docker compose up -d                    # mosquitto + home assistant
+docker compose up -d                    # mosquitto + home assistant + weather-engine
 docker compose ps
 docker compose logs -f
 
@@ -97,7 +97,7 @@ the ids their discovery config gave them. Why this needs a script at all is in
 `ARCHITECTURE.md`.
 
 **After a reboot everything comes back by itself:** `docker.service` is enabled,
-both containers are `restart: unless-stopped`, and the firewall rule is
+all three containers are `restart: unless-stopped`, and the firewall rule is
 reinstated by `iot-stack-firewall.service`.
 
 A container you stop by hand stays stopped across a reboot — that is what
