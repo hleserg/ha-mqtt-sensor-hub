@@ -21,6 +21,7 @@ homeassistant/config/backups/
 homeassistant/config/blueprints/
 homeassistant/config/.HA_VERSION
 homeassistant/config/.ha_run.lock
+homeassistant/config/.cache/
 .weather-sim-rain
 homeassistant/config/*.db-shm
 homeassistant/config/*.db-wal
