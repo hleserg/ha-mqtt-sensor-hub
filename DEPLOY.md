@@ -27,11 +27,13 @@ on the host: every script that speaks MQTT runs the client inside a throwaway
 `eclipse-mosquitto` container.
 
 ```sh
-git clone https://github.com/hleserg/iot-stack.git
+git clone https://github.com/hleserg/ha-mqtt-sensor-hub.git iot-stack
 cd iot-stack
 ```
 
-Any directory works, but two files hardcode an absolute path — see step 5.
+Any directory name works. `iot-stack` is used throughout the docs and matches
+the Compose project name, which is why the clone is renamed here. Two files
+hardcode the absolute path `/home/sergey/iot-stack` — see step 5.
 
 ---
 
