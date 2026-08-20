@@ -1,5 +1,8 @@
 # iot-stack — home IoT and weather infrastructure on `doctor`
 
+*The repository is `ha-mqtt-sensor-hub`; the stack, the Compose project and the
+deployment directory are all called `iot-stack`, and the docs use that name.*
+
 Local-first Home Assistant + MQTT for my own weather sensors, a RF/BLE sensor
 collector, MeshCore telemetry and ESP32-S3 watches. No cloud dependency: with
 the internet unplugged, the broker, Home Assistant, the watches and MeshCore all
