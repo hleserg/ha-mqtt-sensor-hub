@@ -235,6 +235,22 @@ opinion about the same relay.
    plaintext, and posts through an external bot API host. Out of scope for this
    stack, worth moving to an env file regardless.
 
+**Live finding, 2026-08-21 01:40 — the hard reset is currently broken.** The
+plug answers ICMP and sits in the ARP table (`6c:4c:bc:fe:f6:1d`, TP-Link), so
+it has power and a Wi-Fi association. But **every TCP port is refused**: 80,
+443, 8080, 8443, 9999, 10002, 10443 were all tried. `GET /status` on the
+tapo-api container returns the same `ConnectionRefused` to `192.168.1.134:80`
+as the failed `on` did on 2026-08-12. So this is not a one-off — the local API
+has been unreachable for at least nine days, and the escalation ladder's last
+rung would fail today if the Minecraft server hung. Likely a firmware update
+that moved or closed the local API, or a device that needs re-adding in the
+Tapo app; that is a hands-on check in the app, not something to guess at from
+here.
+
+Nothing was written to the plug during this inspection — only `GET /status` and
+TCP connect attempts. `POST /on` / `POST /off` power-cycle a running server and
+are not diagnostics.
+
 **Not decided yet:** whether the plug's state reaches MQTT from the script, from
 a poller, or from HA in read-only mode; whether it lives under `own/` or a new
 namespace, since it is neither a sensor of mine nor somebody else's transmitter.
@@ -283,6 +299,49 @@ both appear as loaded custom integrations, zero `ERROR`/`Traceback`, healthcheck
 - `--full` backups therefore now carry that token too. `BACKUP_RESTORE.md`
   already treats those archives as secret; this does not change the rule, it
   raises what the rule is protecting.
+
+### X10 · The dog feeder (Tuya / Smart Life) `[~]`
+*Owner, 2026-08-21: "еще должна быть умная кормушка для собаки в сети…
+кормушка у меня в smart life." Found and identified; the component is
+installed; nothing is configured.*
+
+**Identified by a LAN sweep**, not by guessing:
+
+| | |
+|---|---|
+| Address | `192.168.1.94` |
+| MAC | `88:49:2d:47:64:ed` — Shenzhen Bilian Electronic, the usual OEM behind Tuya Wi-Fi modules |
+| Open port | **6668/tcp** — the Tuya local protocol, and the only port it answers on |
+| App | Smart Life, which is Tuya's own client |
+
+It did not answer the UDP discovery broadcast during a 25-second listen on
+6666/6667, so the model and protocol version are still unknown. That is common
+on newer firmware and does not block anything: the address and the local
+protocol are enough.
+
+**Installed:** `xZetsubou/hass-localtuya` 2026.7.0, no Python requirements,
+loads cleanly. Chosen over the two alternatives on purpose:
+
+- vs. Home Assistant's built-in `tuya` — that one is cloud-only. The feeder
+  would stop responding when the internet does, which is the wrong property for
+  something that dispenses food.
+- vs. `make-all/tuya-local` — better curated device configs, but it needs the
+  feeder's model to be in its library, and we do not know the model yet.
+  LocalTuya can drive raw datapoints regardless, and its config flow can pull
+  the device list and local keys from a Tuya account instead of hand-copying
+  them. If the feeder turns out to be covered by `tuya-local`, switching is one
+  script run and one config entry.
+
+**What is left — the owner's part, because it needs an account:** every local
+Tuya integration needs the device's **local key**, which only the Tuya IoT
+Platform hands out. That means registering a (free) Tuya IoT developer account
+and linking the Smart Life account to it. LocalTuya's config flow does the rest
+by itself. Nothing else is blocking.
+
+**Note on ownership:** while Smart Life keeps talking to the feeder through
+Tuya's cloud, local control does not conflict with it — the device accepts both
+— but scheduled feeding must live in exactly one place. Two schedulers feeding
+one dog is avoidance #1 with a real-world consequence.
 
 ## LATER / EXPERIMENTAL
 
