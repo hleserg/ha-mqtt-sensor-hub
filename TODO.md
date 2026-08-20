@@ -373,6 +373,35 @@ loads cleanly. Chosen over the two alternatives on purpose:
   them. If the feeder turns out to be covered by `tuya-local`, switching is one
   script run and one config entry.
 
+**Added by the owner, 2026-08-21 ~02:20 — through the built-in cloud `tuya`
+integration, not LocalTuya.** It works, and it brought 12 entities:
+
+`camera.smart_feeder` (streams, `supported_features=2`), `switch.*` for privacy
+mode / flip / time watermark / motion alarm / motion zone, `select.*` for
+anti-flicker and motion sensitivity, `number.smart_feeder_volume`,
+`light.smart_feeder_indicator_light`, `event.smart_feeder_doorbell_message`,
+`button.smart_feeder_restart`. Zero errors in the log.
+
+**Two things follow, and both matter more than the setup itself:**
+
+1. **The video works — over the cloud.** The earlier finding stands unchanged:
+   the device offers no local stream, and nothing here contradicts that. But
+   Tuya's own cloud path does deliver it, and that is what the owner used. The
+   practical answer to "can I see the camera in Home Assistant" turned out to be
+   yes, with an internet dependency attached.
+2. **Not one of the 12 entities dispenses food.** Home Assistant's Tuya
+   integration mapped this device as a *camera* category and exposed the camera
+   half of it. Feeding, portions and schedule are not in Home Assistant at all —
+   they still live only in Smart Life. That is exactly the gap LocalTuya fills,
+   since it reads raw datapoints regardless of how the device is categorised,
+   and it is already installed. The local key is still the only blocker.
+
+Note the split that now exists: the camera arrives over the cloud, and the
+feeding — if it is wired up at all — would arrive locally over 6668. Two
+transports to one device is acceptable here because they carry different
+things and neither commands the other. Feeding schedules must still live in
+exactly one place.
+
 **What is left — the owner's part, because it needs an account:** every local
 Tuya integration needs the device's **local key**, which only the Tuya IoT
 Platform hands out. That means registering a (free) Tuya IoT developer account
