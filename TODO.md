@@ -251,6 +251,27 @@ Nothing was written to the plug during this inspection — only `GET /status` an
 TCP connect attempts. `POST /on` / `POST /off` power-cycle a running server and
 are not diagnostics.
 
+**Re-checked 02:05 the same night, with the owner switching the plug on from
+the Tapo app while the scan ran.** The app works, so the firmware is alive and
+its cloud path is fine — but the local API stayed refused, and a sweep of every
+live host on the LAN found **nothing listening on 80 except the router and the
+RF node**. So the plug is not merely unreachable at `.134`; its local HTTP
+service is not answering anywhere. The most likely cause is a firmware update
+that closed local access, which fits the timeline — it worked before 2026-08-12
+and has failed since — but that is inference, not a measurement.
+
+The consequence is concrete: Home Assistant's built-in `tplink` integration is
+**local-only** and will not find this plug in its current state. Options, in
+order of preference and none of them started:
+
+1. Get local access back — check the Tapo app for a third-party/local-access
+   toggle, or whether the plug wants re-adding after the update. Hands-on.
+2. Leave the plug where it is. `mc-healthcheck.sh` is the owner and it is the
+   only thing that needs the plug; the fix belongs there either way.
+3. A cloud-based Tapo component. Adds a cloud dependency to the hard reset of a
+   local server, which is the wrong direction for the one rung that exists to
+   work when everything else has failed.
+
 **Not decided yet:** whether the plug's state reaches MQTT from the script, from
 a poller, or from HA in read-only mode; whether it lives under `own/` or a new
 namespace, since it is neither a sensor of mine nor somebody else's transmitter.
@@ -318,6 +339,26 @@ It did not answer the UDP discovery broadcast during a 25-second listen on
 6666/6667, so the model and protocol version are still unknown. That is common
 on newer firmware and does not block anything: the address and the local
 protocol are enough.
+
+**The feeder has a camera, and it was re-paired at 02:00 while a scan ran.**
+Results, because they change what is possible rather than merely how it is set
+up:
+
+- The feeder is still `192.168.1.94` and **still answers on 6668 and nothing
+  else**. Re-pairing exposed no RTSP (554/8554), no ONVIF (2020/8000), no HTTP.
+- A second listen on 6666/6667, 45 seconds, right after re-pairing: still
+  silent.
+- One new host appeared, `192.168.1.60`, MAC `c2:f3:59:…` — a locally
+  administered address, i.e. a randomised MAC, with no open ports. That is the
+  signature of a phone joining Wi-Fi, not of a feeder; the re-pairing was done
+  from it. Noted so nobody chases it tomorrow.
+
+So: **LocalTuya will give the controls — feed, portions, schedule, status — and
+will not give the video.** Tuya cameras stream through Tuya's own P2P/cloud path
+and expose no local stream; there is nothing on this device for `generic_camera`
+or go2rtc to pull. If live video in Home Assistant matters, that is a separate
+question with its own answer, and the honest short version is that this
+particular device probably cannot do it locally at all.
 
 **Installed:** `xZetsubou/hass-localtuya` 2026.7.0, no Python requirements,
 loads cleanly. Chosen over the two alternatives on purpose:
