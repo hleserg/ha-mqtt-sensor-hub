@@ -18,6 +18,10 @@ homeassistant/config/tts/
 homeassistant/config/deps/
 homeassistant/config/custom_components/
 homeassistant/config/backups/
+homeassistant/config/blueprints/
+homeassistant/config/.HA_VERSION
+homeassistant/config/.ha_run.lock
+.weather-sim-rain
 homeassistant/config/*.db-shm
 homeassistant/config/*.db-wal
 
