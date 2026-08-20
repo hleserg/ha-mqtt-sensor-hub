@@ -198,6 +198,48 @@ exists to prevent — see `DECISIONS.md` D-010.
 
 ---
 
+### X8 · The Minecraft power plug `[ ]`
+*Raised 2026-08-21 by the owner: "умная розетка на перезагрузку minecraft
+сервера… надо бы её тоже подключить." Deferred to the next session by his own
+call. Nothing has been changed.*
+
+**What is already there**, read-only inspection on doctor:
+
+| | |
+|---|---|
+| Plug | TP-Link Tapo at `192.168.1.134` |
+| Driver | `tapo-api` container (`tapo_api.py`), `POST /on`, `POST /off`, up 3 months |
+| Caller | `/home/sergey/scripts/mc-healthcheck.sh`, cron `*/2 * * * *` |
+| Target | the Minecraft host `192.168.1.50` — a *different* machine |
+| Role | last-resort rung of an escalation ladder: alert → RCON warn + restart → docker kill → **Tapo power reset** → WOL → dead |
+
+**The design question, and it is the whole task.** The plug already has exactly
+one owner, and that owner is a state machine that cuts mains power to a running
+server. Adding Home Assistant's Tapo integration would create a second owner of
+one relay — avoidance #1, in its most literal form: HA could toggle power while
+`mc-healthcheck.sh` is mid-escalation. Default answer, unless the owner wants
+otherwise: **Home Assistant observes and does not control.** The script stays
+the actor and publishes what it did; HA renders state and history and can alert.
+A manual switch in HA, if wanted at all, needs an interlock — not a second
+opinion about the same relay.
+
+**Two findings from the inspection, neither introduced by us:**
+
+1. A power cycle failed on the record. `2026-08-12 03:38` — `off` returned 200,
+   the follow-up `on` returned 500: `ConnectionRefused` to `192.168.1.134:80`.
+   The plug's own HTTP endpoint refused right after the cut. So the server was
+   left unpowered by a routine that intended to restart it. Whatever shape the
+   integration takes, `on` needs a retry with backoff and an alert on final
+   failure; the current one-shot is a coin flip at the worst moment.
+2. `mc-healthcheck.sh` carries a Telegram bot token and chat id hardcoded in
+   plaintext, and posts through an external bot API host. Out of scope for this
+   stack, worth moving to an env file regardless.
+
+**Not decided yet:** whether the plug's state reaches MQTT from the script, from
+a poller, or from HA in read-only mode; whether it lives under `own/` or a new
+namespace, since it is neither a sensor of mine nor somebody else's transmitter.
+Decide that before writing anything.
+
 ## LATER / EXPERIMENTAL
 
 ### L1 · MeshCore live map `[ ]`
