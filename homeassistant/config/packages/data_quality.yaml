@@ -40,6 +40,12 @@ input_number:
   # SHT30 and BME280 tolerances only stack to about 1.2 C, but two sensors in
   # one enclosure also differ for real, physical reasons that no datasheet
   # covers. Watch the actual gap for a week, then set this from what it does.
+  #
+  # And set it HERE, not only on the dashboard. `initial:` is re-applied by Home
+  # Assistant on every restart, and every change under packages/ restarts Home
+  # Assistant -- so a value tuned in the UI survives exactly until the next
+  # config edit. The two helpers above behave the same way; it matters more for
+  # this one, because this one is meant to be arrived at by measurement.
   outdoor_divergence_limit:
     name: Outdoor thermometer divergence limit
     min: 0.5

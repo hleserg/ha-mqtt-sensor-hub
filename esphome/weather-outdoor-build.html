@@ -1,3 +1,7 @@
+<!DOCTYPE html>
+<html lang="ru">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Сборка уличной ноды</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -602,6 +606,7 @@ footer p { max-width: 66ch; }
     <li><label><input type="checkbox" id="s-i2c"><span class="txt"><strong>D4 → SDA, D5 → SCL</strong><span class="sub">Плюс нижние концы резисторов на соответствующие линии.</span></span></label></li>
     <li><label><input type="checkbox" id="s-check"><span class="txt"><strong>Прозвонить до подачи питания</strong><span class="sub">3V3 ↔ GND не должны звониться накоротко. Это единственная проверка, которая ловит почти все ошибки монтажа.</span></span></label></li>
     <li><label><input type="checkbox" id="s-pwr"><span class="txt"><strong>Питание — в последнюю очередь</strong><span class="sub">+5 В на площадку 5V, минус на общую землю.</span></span></label></li>
+    <li><label><input type="checkbox" id="s-nodouble"><span class="txt"><strong>Понято: USB и блок питания — не одновременно</strong><span class="sub">Площадка 5V — это та же линия, что VBUS разъёма USB, и развязывающего диода между ними нет. Воткнуть кабель для прошивки, не вынув блок питания из розетки, — значит соединить два источника напрямую, и один начнёт питать другой через порт ноутбука.</span></span></label></li>
   </ul>
 
   <h3>Питание T114 из той же линии</h3>
@@ -662,6 +667,11 @@ grep WEATHER_COLLECTOR_MQTT_PASSWORD .env</code></pre>
 esphome run weather-outdoor.yaml</code></pre>
 
   <p>Первый раз — обязательно по USB. OTA станет доступна только после того, как прошивка с ним однажды окажется на плате.</p>
+
+  <div class="note warn">
+    <span class="tag">Блок питания — из розетки</span>
+    <p>На время прошивки по USB внешнее питание должно быть отключено. Площадка <code>5V</code> сидит на той же линии, что VBUS разъёма, диода между ними нет — иначе два источника встретятся напрямую.</p>
+  </div>
 
   <p>Сразу после загрузки в логе ищи строку сканирования шины. Она — единственное настоящее подтверждение того, что пайка удалась:</p>
 
