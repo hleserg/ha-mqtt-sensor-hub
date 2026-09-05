@@ -43,11 +43,15 @@ offline_after_seconds: 3600
 # derivation actually reads (see `derive.py`); the engine refuses to start
 # otherwise rather than grading against a typo forever.
 # `temperature` is mandatory — nothing derives without it.
+#
+# What the real station measures today (esphome/weather-outdoor.yaml): an SHT30
+# for temperature and humidity, a BME280 for pressure. No anemometer exists, so
+# `wind_speed` is deliberately absent — listing it would grade a complete
+# station `partial` forever, which is exactly the failure this list prevents.
 expected_inputs:
   - temperature
   - humidity
   - pressure
-  - wind_speed
 
 # Everything the engine reads. Adding a source here is the only change required
 # when a new measurement becomes available. Not all of them are used by the

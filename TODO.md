@@ -83,11 +83,50 @@ contract. `weather/outdoor/…` is now stated explicitly as a **role** — whate
 plays the outdoor-station part fills it — and every other own sensor lives in
 `own/<id>/…` (`MQTT.md` §14, `SENSORS.md` case 5, D-013).
 
+**2026-09-06: the first station exists on paper.** `esphome/weather-outdoor.yaml`
+— XIAO ESP32C3, SHT30 (`0x44`, temperature + humidity) and BME280 (`0x76`,
+pressure), both on 30-50 cm probe leads. It fills the `weather/outdoor/…` role
+rather than living in `own/`. `esphome config` passes on 2026.8.2; it has not
+been flashed, and the C5 stays the plan for whatever needs more pins later. The
+BME280 has not arrived, so the first flash runs on the SHT30 alone.
+
+Two decisions worth keeping:
+
+- **`temperature_secondary`.** The BME280 also reports temperature, published to
+  `weather/outdoor/temperature_secondary` and never used as an input. Two
+  sensors disagreeing by more than their combined tolerance is the cheapest
+  detector of a failing one that this station can carry. No ACL change: the
+  `weather_collector` grant is already `topic write weather/#`.
+- **Only the SHT30 stamps `last_update`.** That timestamp covers the whole input
+  set, so letting the BME280 stamp it would let a live pressure sensor report a
+  dead thermometer's retained value as fresh.
+
+Everything downstream of the node is now in place too:
+
+- `esphome/weather-outdoor-build.html` — the build sheet: pinout, wiring table,
+  how to identify the probe's wires with a multimeter before powering it, the
+  bring-up checklist, and where on the balcony it goes. Ticks persist in the
+  browser, because this gets done over several evenings.
+- `weather/outdoor/temperature_secondary` — entity added, marked diagnostic.
+- `sensor.outdoor_thermometer_divergence` and
+  `binary_sensor.outdoor_thermometers_disagree` in `data_quality.yaml`, with
+  `input_number.outdoor_divergence_limit` to tune the threshold from the
+  dashboard. The alarm needs the gap to hold for 30 minutes, and reports
+  nothing at all while the BME280 is absent.
+- `expected_inputs` in `config.example.yaml` cut to the three the station
+  actually measures. **The live `weather-engine/config.yaml` on doctor is
+  gitignored and still lists four, including `wind_speed`** — until it is
+  trimmed by hand the engine reads `partial` forever.
+
+Left for the owner, all in the build sheet: `esphome/secrets.yaml`, the
+`weather_collector` password from `.env`, the soldering, the first flash over
+USB, and `./scripts/normalize-entity-ids.sh` after Home Assistant restarts.
+
 Ready and waiting for the first board:
 
-- `esphome/own-sensor-reference.yaml` — copy-per-sensor config, **never built or
-  flashed**, no C5 in hand. First flash is the test; its own checklist is at the
-  bottom of the file.
+- `esphome/own-sensor-reference.yaml` — copy-per-sensor config for `own/`
+  sensors, **never built or flashed**, no C5 in hand. First flash is the test;
+  its own checklist is at the bottom of the file.
 - `own/` namespace, ACL pattern rules, four functional ACL tests passed.
 - `expected_inputs:` in `weather-engine/config.yaml`, so a station that measures
   three things and not four reads `ok` instead of a permanent `partial`.
@@ -167,11 +206,43 @@ whether the MQTT copy is current. `sensor.meshcore_mirror_age` and
 `binary_sensor.meshcore_mirror_stale` trip after ten minutes of silence from
 either the automation or the radio.
 
-### X6 · LPP pressure gap `[ ]`
+### X6 · LPP pressure gap `[!]`
 *Depends on: a mesh node that actually reports pressure.* `meshcore-ha` v2.9.0
 does not map Cayenne LPP type 115 (barometer); such a reading arrives as a
 generic unitless sensor. Fix locally with a template sensor, or upstream with a
 mapping patch. Evidence in `MESHCORE.md`.
+
+**Re-marked `[!]` on 2026-09-06, after checking instead of assuming.** This was
+carrying `[ ]` as though it were merely unstarted work. It is not — there is no
+pressure reading anywhere in this system to map. The whole retained contents of
+`meshcore/#`, read off the broker:
+
+```
+meshcore/044e2d/battery          35.75
+meshcore/044e2d/battery_voltage  3.429
+meshcore/044e2d/status           offline
+meshcore/044e2d/last_seen        2026-08-26T09:35:04+00:00
+meshcore/044e2d/meta             {…}
+```
+
+Battery and nothing else, exactly as X5 records — this node has no
+environmental sensor of any kind, let alone a barometer. Writing the template
+sensor now would mean writing and testing a mapping against a value that has
+never existed, which is the definition of speculative work. It stays written
+down because the *finding* is worth keeping; it does not become a task until a
+node with a BME280 exists.
+
+**And the node behind those readings has been off the air since 2026-08-26.**
+`status` reads `offline` and `last_seen` is eleven days old, which is the
+freshness machinery working exactly as designed — nothing is stale-labelled as
+current. Confirmed at the network layer rather than inferred: the Companion at
+`192.168.1.93` answers no ICMP and gives `No route to host` on TCP/5000, so it
+is not merely wedged, it is off the LAN. Nothing in the stack is broken by this
+and no alert was warranted — the mirror reports it correctly — but it is worth
+knowing before anyone debugs "why is there no mesh data", and it is the reason
+X6, L1 and L2 cannot be moved forward from a keyboard today. Getting the node
+back on is hands-on: it is a power or Wi-Fi question at the node, not a
+software one here.
 
 ### X7 · Schedule backups `[x]`
 Done. Daily `--full` at 04:30 via `/etc/cron.d/iot-stack-backup`, retaining 14,
@@ -315,10 +386,65 @@ a poller, or from HA in read-only mode; whether it lives under `own/` or a new
 namespace, since it is neither a sensor of mine nor somebody else's transmitter.
 Decide that before writing anything.
 
-### X9 · Alice / Yandex — installed, not configured `[~]`
+**2026-09-06 — the script fix is written and tested, and not yet applied.**
+Reading `mc-healthcheck.sh` turned up three defects in `tapo_power_reset()`,
+not the one this entry recorded:
+
+1. **`on` was one-shot and its result was discarded** — `curl -s … > /dev/null
+   2>&1`, no status checked. This is exactly the 2026-08-12 failure: `off`
+   returned 200, `on` returned 500, and the machine was left unpowered with
+   nobody told.
+2. **`off` was unchecked too.** A failed cut still logged "hard power reset"
+   and still slept as though it had happened — so the log would have lied
+   about the one action in this script that touches mains.
+3. **The log says "waiting 90s for boot" and the code sleeps 20.** The next
+   cron run at +2 min therefore lands on a machine that may still be booting.
+
+Replacement written against a mock HTTP endpoint — the real plug was never
+called, since `POST /on` and `/off` power-cycle a running server and are not
+diagnostics. It checks both calls by HTTP status, retries `on` with 5/10/20/40 s
+backoff (~2.5 min of trying), alerts loudly if power was cut and could not be
+restored, and returns non-zero so the caller stops pretending the reset
+happened. Four paths exercised:
+
+| Case | Behaviour |
+|---|---|
+| `on` succeeds first try | exit 0, one call |
+| `on` fails twice then succeeds — *the 2026-08-12 case* | recovers on attempt 3, exit 0 |
+| `on` never succeeds | 🚨 alert naming the machine as unpowered, exit 1 |
+| `off` itself fails | alerts, **does not cut power**, exit 1 |
+
+Not applied: the file lives outside this repository, on doctor, and it is the
+rung that cuts mains to a running server — applying it is the owner's call, not
+something to do from here in passing. The tested function is ready to drop in.
+
+**Still outstanding from the original entry, and unchanged:** the Telegram bot
+token and chat id are still hardcoded in plaintext at the top of that script
+(`BOT_TOKEN=`, `CHAT_ID=`, lines 9–10). The file is mode 0711 so it is not
+world-readable, but a live bot token in a script under `/home/sergey/scripts`
+is one `cat` away for anything running as that user. Move both to an env file
+alongside the change above, and rotate the token when you do — it has been in
+plaintext long enough that rotation is cheaper than auditing who has seen it.
+
+### X9 · Alice / Yandex — half configured `[~]`
 *Owner's call, 2026-08-21: "и под алису все установи, завтра настроим."
-Both components are on the machine and load cleanly; neither is configured, and
-an unconfigured custom component owns nothing.*
+Both components are on the machine and load cleanly.*
+
+**Status corrected 2026-09-06.** The entry below said "neither is configured",
+and that stopped being true within the hour it was written. Read from
+`core.config_entries` rather than from memory:
+
+| Component | Config entry | Created |
+|---|---|---|
+| `yandex_station` | `tremer1988` | 2026-08-20 23:24 |
+| `yandex_smart_home` | **none** | — |
+
+So step 2 below is done — the station is authorised and the token is stored.
+Step 1, the Alice → Home Assistant direction, and step 3, the exposure
+allow-list, are still open and still the owner's part. Everything under
+"Costs" applies as written, and now applies for real rather than
+prospectively: the Yandex token is in `.storage` today and is in every
+`--full` backup taken since 2026-08-20.
 
 Two integrations, because they solve opposite problems:
 
@@ -450,6 +576,106 @@ by itself. Nothing else is blocking.
 Tuya's cloud, local control does not conflict with it — the device accepts both
 — but scheduled feeding must live in exactly one place. Two schedulers feeding
 one dog is avoidance #1 with a real-world consequence.
+
+### X11 · Zigbee2MQTT `[~]` — bridge live, network empty
+*Deployed by the owner 2026-09-05 (commit `4304409`). Documented and audited
+2026-09-06, which is what this entry is.*
+
+The bridge is real and healthy. Read from the running stack, not the compose
+file:
+
+| | |
+|---|---|
+| Container | `iot-zigbee2mqtt`, `koenkk/zigbee2mqtt:2.14.1`, part of the default stack |
+| Coordinator | ZB-GW04 stick reflashed to **EmberZNet 8.0.3 [GA]**, EZSP v16, build 581 |
+| Serial | `/dev/serial/by-id/usb-1a86_USB_Serial-if00-port0` → `/dev/ttyUSB0`, `adapter: ember` |
+| Network | up; `pan_id` set, network key in `zigbee2mqtt/data/configuration.yaml` |
+| Broker | connected as `zigbee2mqtt`; `bridge/state` = `{"state":"online"}` |
+| Discovery | seven bridge entities announced into `homeassistant/…/config` |
+| Web UI | <http://192.168.1.51:8099> — pairing and OTA |
+| **Devices paired** | **0** |
+
+**The commit shipped code and no documentation, and that is what was actually
+unfinished.** Nine documents describe this stack and none of them knew Zigbee
+existed: `SERVICES.md` listed three services, `README.md` said "all three",
+`MQTT.md` had no `zigbee2mqtt/` namespace and an accounts table missing an
+account, `BACKUP_RESTORE.md` did not mention that the archive now carries a
+Zigbee network key, `ACCEPTANCE.md` counted eight accounts, and there was no
+decision entry at all. All of that is now written, and D-014 records why the
+bridge sits outside Home Assistant rather than inside it as ZHA.
+
+**One real defect was found by testing the ACL rather than reading it.** The
+`homeassistant` account had `read zigbee2mqtt/#` and no write rule, so Home
+Assistant could see Zigbee devices and command none of them — and the bridge's
+own permit-join, restart and log-level entities were dead too, since their
+command topics are under `zigbee2mqtt/bridge/request/`. Measured under MQTT 5:
+`RC:135 not authorized` on `zigbee2mqtt/probe/set`, `RC:16 accepted` on a
+control topic. This is the `sensors/+/cmd/#` bug from the first deployment
+repeating exactly, and the reason it hides is the same: under MQTT 3.1.1 the
+broker acknowledges a denied publish and drops it silently. Fixed with three
+narrow rules, plus a single-topic read grant for `monitor` so `healthcheck.sh`
+can see the bridge's last will. **The fix is in this repository and is not yet
+on the broker** — applying it is `git pull` on doctor and
+`docker compose exec mosquitto kill -HUP 1`, no downtime.
+
+It cost nothing in the field because the network is empty. It would have cost
+an evening of "the lamp is in Home Assistant but the switch does nothing".
+
+**What is left, in order:**
+
+1. **Apply the ACL fix on doctor** — pull and HUP, above. Do this before
+   pairing anything, or the first device will reproduce the bug.
+2. **Pair the actual devices.** Owner's part, and hands-on by nature: each
+   device has to be put into pairing mode physically. Permit-join is off and
+   should be turned on only for the minute it takes, from the web UI.
+3. **Name every device the moment it pairs.** The friendly name *is* the topic
+   segment and the entity id, so renaming later moves the topic and breaks
+   every automation and card that referenced it. `MQTT.md` §6b.
+4. **Rehearse one restore before the network is worth anything.** `zigbee2mqtt/data/`
+   is now the second irreplaceable thing in the stack after the recorder
+   database — lose it and every device gets re-paired by hand. It is in the
+   `--full` archive and untested as a restore. `BACKUP_RESTORE.md`.
+
+**Not a task, but worth stating so it is not re-litigated:** the choice of
+Zigbee2MQTT over ZHA is cheap to reverse *today* and expensive after the first
+device is paired, because the network key and device table live in a format ZHA
+does not read. D-014.
+
+### X12 · The MeshCore Companion over USB is not visible on doctor `[ ]` — needs the owner, hands on the hardware
+*Raised 2026-09-06. Next session: 2026-09-07.* The owner reports the T114 USB
+companion is plugged in and the job is done. Doctor disagrees, and the
+disagreement is what has to be resolved before anything downstream is believed:
+
+| Checked on doctor | Result |
+|---|---|
+| `ls /dev/serial/by-id/` | only `usb-1a86_USB_Serial-if00-port0` — the ZB-GW04 Zigbee stick |
+| any `/dev/ttyACM*` | none |
+| MeshCore integration `devices:` | `null` |
+| `meshcore/044e2d/status` | `offline`, retained, unchanged since 2026-08-26 |
+
+Nothing here proves the board is faulty — it proves doctor cannot see it. The
+owner's own two hypotheses are the first two to test, in this order, because
+both are cheap and both are common:
+
+1. **It is in a different machine.** Easiest to settle: look at which box the
+   cable actually runs to.
+2. **The cable is charge-only.** Kit cables with no data pair are everywhere and
+   are visually identical to working ones. The board powers up, the LED lights,
+   nothing enumerates — which is exactly the symptom above. Swap in a cable
+   known to carry data and re-check `ls /dev/serial/by-id/`.
+
+Only if both are excluded does it become a firmware or driver question.
+
+**Why this waits for the owner:** every step is physical — reading a label,
+following a cable, swapping one. Nothing about it can be established from a
+shell, which is why guessing further from here would only produce confident
+fiction.
+
+Blocks: `MESHCORE.md` §"Planned: moving to the T114 over USB" and the
+`ARCHITECTURE.md` diagram both still describe the pre-USB arrangement. Neither
+gets rewritten until the true state is known.
+
+---
 
 ## LATER / EXPERIMENTAL
 

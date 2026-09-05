@@ -144,6 +144,27 @@ mqtt:
       payload_not_available: "offline"
       device: *outdoor_station
 
+    # The BME280's own thermometer, published alongside the SHT30's but never
+    # used as an input to anything. Its only job is to disagree: two sensors in
+    # one box drifting apart by more than their combined tolerance is the
+    # cheapest detector of a failing one this station can carry. The comparison
+    # itself lives in data_quality.yaml.
+    #
+    # `unknown` until a BME280 is actually fitted, which is the correct state
+    # for a cross-check with nothing to check against.
+    - name: "Outdoor Temperature (secondary)"
+      unique_id: outdoor_temperature_secondary
+      state_topic: "weather/outdoor/temperature_secondary"
+      unit_of_measurement: "°C"
+      device_class: temperature
+      state_class: measurement
+      suggested_display_precision: 2
+      entity_category: diagnostic
+      availability_topic: "weather/outdoor/status"
+      payload_available: "online"
+      payload_not_available: "offline"
+      device: *outdoor_station
+
     # ISO-8601 timestamp of the *measurement* (not of reception). This is the
     # anchor for every freshness calculation in data_quality.yaml.
     - name: "Outdoor Last Update"

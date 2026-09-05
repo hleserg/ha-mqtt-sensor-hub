@@ -72,6 +72,34 @@ hardware exists:
 
 `weather/outdoor/illuminance` (lx) · `weather/outdoor/surface_temperature` (°C)
 
+### The cross-check topic
+
+| Topic | Unit | Example |
+|---|---|---|
+| `weather/outdoor/temperature_secondary` | °C | `-3.55` |
+
+A second thermometer's reading, published **only to be disagreed with**. Nothing
+derives from it and no consumer should treat it as weather; Home Assistant marks
+it `entity_category: diagnostic` for that reason.
+
+It exists because the current station carries two chips that both measure
+temperature — an SHT30 (±0.2 °C, the authority) and a BME280 fitted for pressure
+(±0.5–1.0 °C). Neither can report that it has begun to lie. Together they can: a
+gap that opens and *stays* open means a failing sensor, a wet probe, or one of
+the two sitting somewhere the other is not. `data_quality.yaml` does the
+comparison and only alarms after half an hour over the limit, because two
+sensors of different thermal mass legitimately disagree for a few minutes at
+sunrise, in a gust, or during a shower.
+
+This does not breach the single-owner rule. That rule is one writer per
+**value**, not per device — two sensors into two topics is exactly how it is
+meant to work. What would breach it is both chips publishing
+`weather/outdoor/temperature`.
+
+Note also that only the primary sensor stamps `last_update`. That timestamp
+covers the whole input set, so a live BME280 stamping it over a dead SHT30 would
+present a stale retained temperature as fresh.
+
 ### Station housekeeping
 
 | Topic | Payload | Retained |
@@ -82,8 +110,15 @@ hardware exists:
 `meta` example:
 
 ```json
-{"source":"esp32-weather","sensor_id":"outdoor-01","firmware":"1.4.2","battery_pct":92}
+{"source":"xiao-esp32c3","sensor_id":"weather-outdoor","firmware":"2026.8.2",
+ "sensors":["sht30","bme280"],"metrics":["temperature","humidity","pressure"],
+ "rssi_at_connect":-67}
 ```
+
+`meta` is published on **connect**, not on a timer — it describes the hardware,
+which does not change between readings. `rssi_at_connect` is there so the
+question "does Wi-Fi actually reach that box" can be answered from a topic dump
+during installation, without opening the enclosure.
 
 `rain` is a **cumulative counter** (Home Assistant `state_class:
 total_increasing`), which is what lets HA derive rain per hour and per day and
@@ -265,6 +300,45 @@ service is off by default; see `README.md`.
 
 ---
 
+## 6b. `zigbee2mqtt/` — the Zigbee bridge
+
+Numbered `6b` rather than `7` on purpose: the sections after it are referenced
+by number from `SENSORS.md`, `ARCHITECTURE.md` and `DECISIONS.md`, and
+renumbering nine sections to insert one is a worse trade than an odd label.
+
+`zigbee2mqtt/<friendly_name>` — the device's whole state as one JSON object,
+retained. Zigbee2MQTT owns this namespace entirely; nothing else writes it.
+
+| Topic | Payload | Retained |
+|---|---|---|
+| `zigbee2mqtt/bridge/state` | `{"state":"online"}` / `{"state":"offline"}` — the bridge's last will | yes |
+| `zigbee2mqtt/bridge/info` | version, coordinator firmware, `permit_join`, `log_level` | yes |
+| `zigbee2mqtt/bridge/health` | ten-minute self-report: process uptime, memory, MQTT queue depth | no |
+| `zigbee2mqtt/bridge/devices` | the full paired-device list | yes |
+| `zigbee2mqtt/bridge/request/…` | commands *into* the bridge — restart, permit_join, options | no |
+| `zigbee2mqtt/<friendly_name>` | one device's state, as JSON | yes |
+| `zigbee2mqtt/<friendly_name>/set` | a command to that device | no |
+
+`bridge/state` is a genuine last will, in the same shape and for the same reason
+as `weather_state/engine_status` (§9): a bridge whose process is wedged still
+looks fine to `docker ps`, and the bus is where that shows. `healthcheck.sh`
+reads it.
+
+**Discovery, not YAML.** Unlike the own weather station, Zigbee devices are
+announced through MQTT Discovery (§8) and their entity ids come from the
+device's friendly name. That is the right way round here: a Zigbee device only
+exists in this stack because a human deliberately pressed its pairing button,
+so there is no open band to allow-list against — the pairing *is* the
+allow-list. Contrast `rtl_433/#` and `sensors/#`, where anything within radio
+range would otherwise become an entity (`SENSORS.md` §2).
+
+**Rename devices before building anything on them.** The friendly name is the
+topic segment and the entity id, so renaming a device later moves its topic and
+breaks every automation and dashboard card that referenced it. Name it once, in
+the Zigbee2MQTT web UI at `http://192.168.1.51:8099`, immediately after pairing.
+
+---
+
 ## 7. Freshness — `fresh` / `stale` / `offline`
 
 A value is never presented as current without its age.
@@ -297,9 +371,17 @@ my own station, where a gap must stay visible rather than blank.
 
 Standard prefix, unchanged: `homeassistant/<component>/<node_id>/<object_id>/config`.
 
-Used by the RF/BLE collector and by rtl_433. My own weather station is
-**not** discovered — it is declared in YAML, so its entity ids are stable
-forever and it exists in Home Assistant whether or not the collector is running.
+Used by the RF/BLE collector, by rtl_433 and — since 2026-09-05 — by
+Zigbee2MQTT, which is the only one of the three currently publishing into it.
+My own weather station is **not** discovered — it is declared in YAML, so its
+entity ids are stable forever and it exists in Home Assistant whether or not the
+collector is running.
+
+Three accounts may now write this prefix (`rf_collector`, `meshcore`,
+`zigbee2mqtt`, plus `homeassistant` itself). That is not a violation of the
+single-owner rule: each writes only under its own `<node_id>` segment, and a
+discovery config is a declaration about a device the writer owns, not a
+measurement anyone else could contradict.
 
 ---
 
@@ -345,7 +427,7 @@ else. It has no write access to any telemetry namespace.
 
 | Account | May read | May write |
 |---|---|---|
-| `homeassistant` | `weather/#`, `weather_state/#`, `sensors/#`, `own/#`, `observed/#`, `radio/#`, `meshcore/#`, `rtl_433/#`, `homeassistant/#`, `ha/#`, `monitor/#`, `$SYS/#` | `homeassistant/#`, `ha/#`, `weather_state/#`, `monitor/#`, `sensors/+/cmd/#`, `meshcore/#` |
+| `homeassistant` | `weather/#`, `weather_state/#`, `sensors/#`, `own/#`, `observed/#`, `radio/#`, `meshcore/#`, `rtl_433/#`, `zigbee2mqtt/#`, `homeassistant/#`, `ha/#`, `monitor/#`, `$SYS/#` | `homeassistant/#`, `ha/#`, `weather_state/#`, `monitor/#`, `sensors/+/cmd/#`, `meshcore/#` |
 | `weather_collector` | `weather/#` | `weather/#` |
 | `rf_collector` | `sensors/#` | `sensors/#`, `homeassistant/#` |
 | `watch` | `weather/#`, `weather_state/#` | `watch/<own-client-id>/#` |

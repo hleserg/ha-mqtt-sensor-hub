@@ -1,0 +1,811 @@
+<title>Сборка уличной ноды</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+
+<style>
+:root {
+  --ground:   #EFF2F3;
+  --surface:  #FFFFFF;
+  --sunken:   #E4E9EB;
+  --ink:      #14181B;
+  --muted:    #5A666D;
+  --rule:     #CFD7DB;
+  --rule-soft:#E1E7E9;
+  --accent:   #0A6E8A;
+  --accent-bg:#DCEDF2;
+  --warn:     #A8501B;
+  --warn-bg:  #F7E9DE;
+  --ok:       #2B6B47;
+  --ok-bg:    #DFEDE5;
+
+  --sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --cond: "IBM Plex Sans Condensed", "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground:   #0E1214;
+    --surface:  #161B1E;
+    --sunken:   #1D2427;
+    --ink:      #E2E8EA;
+    --muted:    #93A2A9;
+    --rule:     #283035;
+    --rule-soft:#1F2629;
+    --accent:   #46B4D0;
+    --accent-bg:#123039;
+    --warn:     #E4915A;
+    --warn-bg:  #33231686;
+    --ok:       #5CBE88;
+    --ok-bg:    #16301F;
+  }
+}
+:root[data-theme="dark"] {
+  --ground:   #0E1214;
+  --surface:  #161B1E;
+  --sunken:   #1D2427;
+  --ink:      #E2E8EA;
+  --muted:    #93A2A9;
+  --rule:     #283035;
+  --rule-soft:#1F2629;
+  --accent:   #46B4D0;
+  --accent-bg:#123039;
+  --warn:     #E4915A;
+  --warn-bg:  #332316;
+  --ok:       #5CBE88;
+  --ok-bg:    #16301F;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-text-size-adjust: 100%;
+}
+
+.wrap {
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 0 20px 96px;
+}
+
+/* ---------------------------------------------------------------- header -- */
+
+header.masthead {
+  padding: 48px 0 28px;
+  border-bottom: 2px solid var(--ink);
+  margin-bottom: 0;
+}
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 0 0 14px;
+}
+h1 {
+  font-family: var(--cond);
+  font-weight: 700;
+  font-size: clamp(30px, 7vw, 46px);
+  line-height: 1.05;
+  letter-spacing: -.015em;
+  margin: 0 0 14px;
+  text-wrap: balance;
+}
+.standfirst {
+  font-size: 17px;
+  color: var(--muted);
+  margin: 0;
+  max-width: 60ch;
+}
+
+/* --------------------------------------------------------------- progress - */
+
+.progress {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: var(--ground);
+  border-bottom: 1px solid var(--rule);
+  padding: 10px 0 11px;
+  margin-bottom: 40px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.progress .count {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: .04em;
+  color: var(--muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.progress .track {
+  flex: 1;
+  height: 4px;
+  background: var(--rule);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.progress .fill {
+  height: 100%;
+  width: 0%;
+  background: var(--accent);
+  transition: width .25s ease;
+}
+.progress button {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  background: none;
+  border: 1px solid var(--rule);
+  color: var(--muted);
+  padding: 4px 9px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.progress button:hover { color: var(--ink); border-color: var(--muted); }
+
+/* --------------------------------------------------------------- sections - */
+
+section { margin: 0 0 52px; }
+
+h2 {
+  font-family: var(--cond);
+  font-weight: 700;
+  font-size: 25px;
+  line-height: 1.15;
+  letter-spacing: -.01em;
+  margin: 0 0 6px;
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  text-wrap: balance;
+}
+h2 .num {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+  letter-spacing: 0;
+  flex: none;
+  padding-top: 2px;
+}
+.subhead {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 20px 35px;
+}
+
+h3 {
+  font-family: var(--cond);
+  font-weight: 600;
+  font-size: 18px;
+  margin: 32px 0 10px;
+  letter-spacing: -.005em;
+}
+
+p { margin: 0 0 14px; max-width: 68ch; }
+p:last-child { margin-bottom: 0; }
+
+a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+
+code, .m {
+  font-family: var(--mono);
+  font-size: .875em;
+  background: var(--sunken);
+  padding: 1px 5px;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------------------------ notes - */
+
+.note {
+  border-left: 3px solid var(--accent);
+  background: var(--accent-bg);
+  padding: 14px 18px;
+  margin: 22px 0;
+  border-radius: 0 4px 4px 0;
+}
+.note.warn { border-left-color: var(--warn); background: var(--warn-bg); }
+.note.ok   { border-left-color: var(--ok);   background: var(--ok-bg); }
+.note p { margin-bottom: 8px; }
+.note p:last-child { margin-bottom: 0; }
+.note .tag {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--accent);
+  display: block;
+  margin-bottom: 6px;
+}
+.note.warn .tag { color: var(--warn); }
+.note.ok   .tag { color: var(--ok); }
+
+/* ----------------------------------------------------------------- board -- */
+
+.boardwrap { margin: 26px 0; overflow-x: auto; }
+
+.board {
+  min-width: 420px;
+  max-width: 560px;
+  margin: 0 auto;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  padding: 0 0 18px;
+}
+.usb {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  text-align: center;
+  padding: 9px 0 10px;
+  border-bottom: 1px dashed var(--rule);
+  margin-bottom: 14px;
+}
+.usb b {
+  display: inline-block;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  padding: 2px 16px;
+  font-weight: 500;
+}
+.pads {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 12px;
+  padding: 0 14px;
+}
+.pads ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.pad {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 5px 6px;
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--muted);
+  min-height: 34px;
+}
+.right .pad { flex-direction: row-reverse; text-align: right; }
+.pad .dot {
+  flex: none;
+  width: 13px; height: 13px;
+  border-radius: 50%;
+  border: 1.5px solid var(--rule);
+  background: var(--surface);
+}
+.pad .name { font-weight: 500; flex: none; min-width: 34px; }
+.right .pad .name { text-align: right; }
+.pad .use { font-size: 11px; color: var(--muted); line-height: 1.25; }
+.pad.on {
+  background: var(--accent-bg);
+  color: var(--ink);
+}
+.pad.on .dot { background: var(--accent); border-color: var(--accent); }
+.pad.on .name { color: var(--accent); font-weight: 600; }
+.pad.on .use { color: var(--ink); }
+.chip {
+  margin: 16px 14px 0;
+  padding: 9px 0;
+  text-align: center;
+  border: 1px dashed var(--rule);
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.boardcap {
+  font-size: 13px;
+  color: var(--muted);
+  text-align: center;
+  margin: 12px auto 0;
+  max-width: 52ch;
+}
+
+/* ---------------------------------------------------------------- tables -- */
+
+.tablewrap { overflow-x: auto; margin: 22px 0; }
+table {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: 480px;
+  font-size: 14.5px;
+}
+caption {
+  text-align: left;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding-bottom: 9px;
+}
+th {
+  text-align: left;
+  font-family: var(--cond);
+  font-weight: 600;
+  font-size: 14px;
+  border-bottom: 1.5px solid var(--ink);
+  padding: 0 12px 7px 0;
+  white-space: nowrap;
+}
+td {
+  padding: 9px 12px 9px 0;
+  border-bottom: 1px solid var(--rule-soft);
+  vertical-align: top;
+}
+td:last-child, th:last-child { padding-right: 0; }
+tbody tr:last-child td { border-bottom: none; }
+td.pin { font-family: var(--mono); font-weight: 500; white-space: nowrap; font-variant-numeric: tabular-nums; }
+td .sub { display: block; font-size: 12.5px; color: var(--muted); font-family: var(--sans); font-weight: 400; }
+
+/* -------------------------------------------------------------- checklist - */
+
+.check { list-style: none; margin: 20px 0; padding: 0; display: grid; gap: 1px; }
+.check li {
+  background: var(--surface);
+  border: 1px solid var(--rule-soft);
+}
+.check li:first-child { border-radius: 5px 5px 0 0; }
+.check li:last-child  { border-radius: 0 0 5px 5px; }
+.check label {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  cursor: pointer;
+}
+.check input[type="checkbox"] {
+  flex: none;
+  width: 17px; height: 17px;
+  margin: 3px 0 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.check .txt { flex: 1; font-size: 15px; }
+.check .txt .sub { display: block; font-size: 13px; color: var(--muted); margin-top: 3px; }
+.check input:checked ~ .txt { color: var(--muted); }
+.check input:checked ~ .txt > strong { text-decoration: line-through; }
+.check input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ------------------------------------------------------------------ code -- */
+
+pre {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  padding: 13px 15px;
+  overflow-x: auto;
+  margin: 16px 0;
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.65;
+}
+pre code { background: none; padding: 0; white-space: pre; font-size: inherit; }
+pre .c { color: var(--muted); }
+
+/* ------------------------------------------------------------------ misc -- */
+
+ul.plain { padding-left: 20px; margin: 0 0 14px; max-width: 66ch; }
+ul.plain li { margin-bottom: 7px; }
+
+.placement { display: grid; gap: 1px; margin: 22px 0; }
+.place {
+  display: flex; gap: 12px; align-items: flex-start;
+  background: var(--surface);
+  border: 1px solid var(--rule-soft);
+  padding: 12px 14px;
+}
+.place:first-child { border-radius: 5px 5px 0 0; }
+.place:last-child  { border-radius: 0 0 5px 5px; }
+.place .mark {
+  flex: none; font-family: var(--mono); font-weight: 600; font-size: 15px;
+  width: 18px; text-align: center; line-height: 1.5;
+}
+.place.yes .mark { color: var(--ok); }
+.place.no  .mark { color: var(--warn); }
+.place .body { font-size: 14.5px; }
+.place .body b { font-weight: 600; }
+.place .body .sub { display: block; color: var(--muted); font-size: 13px; margin-top: 2px; }
+
+footer {
+  border-top: 1px solid var(--rule);
+  padding-top: 20px;
+  font-size: 13px;
+  color: var(--muted);
+}
+footer p { max-width: 66ch; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+@media (max-width: 560px) {
+  .pads { grid-template-columns: 1fr; gap: 14px; }
+  .right .pad { flex-direction: row; text-align: left; }
+  .right .pad .name { text-align: left; }
+  h2 { font-size: 22px; }
+  .subhead { margin-left: 0; }
+}
+</style>
+
+<div class="wrap">
+
+<header class="masthead">
+  <p class="eyebrow">Сборочный лист · esphome/weather-outdoor.yaml</p>
+  <h1>Уличная погодная нода</h1>
+  <p class="standfirst">XIAO ESP32C3, SHT30 в зонде и BME280. Что куда паять, что настроить, и как проверить, что оно действительно работает, а не делает вид.</p>
+</header>
+
+<div class="progress">
+  <span class="count" id="count">0 / 0</span>
+  <span class="track"><span class="fill" id="fill"></span></span>
+  <button type="button" id="reset">Сбросить</button>
+</div>
+
+<!-- ====================================================================== -->
+<section>
+  <h2><span class="num">00</span>Прочитать до того, как включён паяльник</h2>
+  <p class="subhead">Одна ошибка здесь стоит датчика</p>
+
+  <div class="note warn">
+    <span class="tag">Цвета проводов ничего не значат</span>
+    <p>У зондов SHT30 «на проводе» нет единого стандарта раскраски. Красный не обязан быть питанием, чёрный не обязан быть землёй. Перепутанные VCC и GND убивают датчик молча и навсегда — он просто больше никогда не отзовётся на шине.</p>
+    <p>Как определить точно — раздел <b>03</b>. Не пропускай его, даже если цвета «очевидные».</p>
+  </div>
+
+  <p>Питание паяется в последнюю очередь. Пока плата обесточена, ошибку можно исправить; после подачи 3.3&nbsp;В на не тот провод — уже нет.</p>
+</section>
+
+<!-- ====================================================================== -->
+<section>
+  <h2><span class="num">01</span>Что должно лежать на столе</h2>
+  <p class="subhead">Закупка и подготовка</p>
+
+  <ul class="check" data-group="parts">
+    <li><label><input type="checkbox" id="p-psu"><span class="txt"><strong>Блок питания</strong><span class="sub"><b>Провод до 5 м и жила от 0.5 мм²</b> → 5&nbsp;В 2&nbsp;А напрямую. <b>Длиннее</b> → 12&nbsp;В 2&nbsp;А плюс копеечный buck-преобразователь на 5&nbsp;В в коробке: на 12&nbsp;В та же тонкая жила теряет полвольта вместо полутора, и стабилизатор XIAO не проседает на пиках передачи. Потребление всего узла с T114 — меньше 0.5&nbsp;А.</span></span></label></li>
+    <li><label><input type="checkbox" id="p-res"><span class="txt"><strong>Два резистора 4.7 кОм</strong><span class="sub">Подтяжки шины I²C. Внутренние подтяжки ESP32 — около 45 кОм, этого мало в любую погоду. Если на платках датчиков уже стоят свои 10 кОм, параллель даст ~3 кОм — тоже в норме, так что поставить безопасно в любом случае.</span></span></label></li>
+    <li><label><input type="checkbox" id="p-box"><span class="txt"><strong>Коробка</strong><span class="sub">Плюс гермовводы или хотя бы отверстия под провода — <b>смотрящие вниз</b>. Одно отдельное отверстие вниз на вентиляцию, чтобы конденсат уходил.</span></span></label></li>
+    <li><label><input type="checkbox" id="p-wire"><span class="txt"><strong>Монтажный провод и термоусадка</strong><span class="sub">Каждую скрутку — в свою термоусадку, до того как всё собрано в жгут.</span></span></label></li>
+    <li><label><input type="checkbox" id="p-mm"><span class="txt"><strong>Мультиметр</strong><span class="sub">Нужен именно в разделе 03, для опознания проводов зонда.</span></span></label></li>
+    <li><label><input type="checkbox" id="p-usb"><span class="txt"><strong>USB-C кабель с сигнальной парой</strong><span class="sub">Первая прошивка — только по проводу, OTA появится после неё. Зарядные кабели без данных выглядят точно так же и попадаются в комплектах постоянно: плата запитается, светодиод загорится, компьютер её не увидит.</span></span></label></li>
+  </ul>
+</section>
+
+<!-- ====================================================================== -->
+<section>
+  <h2><span class="num">02</span>Распиновка XIAO</h2>
+  <p class="subhead">Плата компонентами вверх, разъём USB-C сверху</p>
+
+  <div class="boardwrap">
+    <div class="board">
+      <div class="usb"><b>USB-C</b></div>
+      <div class="pads">
+        <ul class="col left">
+          <li class="pad"><span class="dot"></span><span class="name">D0</span><span class="use">GPIO2</span></li>
+          <li class="pad"><span class="dot"></span><span class="name">D1</span><span class="use">GPIO3</span></li>
+          <li class="pad"><span class="dot"></span><span class="name">D2</span><span class="use">GPIO4</span></li>
+          <li class="pad"><span class="dot"></span><span class="name">D3</span><span class="use">GPIO5</span></li>
+          <li class="pad on"><span class="dot"></span><span class="name">D4</span><span class="use">GPIO6 · <b>SDA</b> → оба датчика + 4.7к</span></li>
+          <li class="pad on"><span class="dot"></span><span class="name">D5</span><span class="use">GPIO7 · <b>SCL</b> → оба датчика + 4.7к</span></li>
+          <li class="pad"><span class="dot"></span><span class="name">D6</span><span class="use">GPIO21</span></li>
+        </ul>
+        <ul class="col right">
+          <li class="pad on"><span class="dot"></span><span class="name">5V</span><span class="use"><b>+5 В</b> от блока питания</span></li>
+          <li class="pad on"><span class="dot"></span><span class="name">GND</span><span class="use"><b>Общая земля</b>: БП, оба датчика</span></li>
+          <li class="pad on"><span class="dot"></span><span class="name">3V3</span><span class="use"><b>Питание датчиков</b> + оба резистора</span></li>
+          <li class="pad"><span class="dot"></span><span class="name">D10</span><span class="use">GPIO10</span></li>
+          <li class="pad"><span class="dot"></span><span class="name">D9</span><span class="use">GPIO9</span></li>
+          <li class="pad"><span class="dot"></span><span class="name">D8</span><span class="use">GPIO8</span></li>
+          <li class="pad"><span class="dot"></span><span class="name">D7</span><span class="use">GPIO20</span></li>
+        </ul>
+      </div>
+      <div class="chip">ESP32-C3</div>
+    </div>
+    <p class="boardcap">Задействованы пять площадок из четырнадцати. D4 и D5 выбраны потому, что именно они подписаны SDA и SCL на самой плате — чтобы через год не разбираться заново.</p>
+  </div>
+
+  <div class="tablewrap">
+    <table>
+      <caption>Что с чем соединяется</caption>
+      <thead>
+        <tr><th>Площадка XIAO</th><th>Куда</th><th>Замечание</th></tr>
+      </thead>
+      <tbody>
+        <tr><td class="pin">5V</td><td>+ блока питания<span class="sub">или buck-преобразователя, если линия 12 В</span></td><td>Только сюда. <b>Не в 3V3</b> — там нет стабилизатора, 5 В сожгут плату.</td></tr>
+        <tr><td class="pin">GND</td><td>− блока питания, GND SHT30, GND BME280</td><td>Одна общая земля на всё. Без неё шина не работает вообще.</td></tr>
+        <tr><td class="pin">3V3</td><td>VCC SHT30, VCC BME280, оба резистора 4.7к</td><td>Это <b>выход</b> стабилизатора платы, а не вход.</td></tr>
+        <tr><td class="pin">D4</td><td>SDA SHT30, SDA BME280, резистор 4.7к → 3V3</td><td>Оба датчика висят на одной шине параллельно.</td></tr>
+        <tr><td class="pin">D5</td><td>SCL SHT30, SCL BME280, резистор 4.7к → 3V3</td><td>То же самое.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Отдельно по BME280</h3>
+  <p>У платки модуля есть ещё два вывода, и от них зависит, увидит её конфиг или нет:</p>
+  <ul class="plain">
+    <li><code>SDO</code> → <b>GND</b>. Это даёт адрес <code>0x76</code>, который прописан в конфиге. На большинстве модулей уже притянут к земле — тогда не трогать. Если оставить висеть, адрес станет <code>0x77</code>.</li>
+    <li><code>CSB</code> → <b>VCC</b>. Переводит чип в режим I²C вместо SPI. Почти всегда уже подтянут на самом модуле.</li>
+  </ul>
+
+  <div class="note">
+    <span class="tag">Адрес угадывать не надо</span>
+    <p>В конфиге включено сканирование шины. При первой загрузке ESPHome сам напечатает в логе список найденных адресов — там и будет видно, <code>0x44</code> или <code>0x45</code> у зонда, <code>0x76</code> или <code>0x77</code> у BME280. Если не совпало с конфигом — правится одна строка <code>address:</code>.</p>
+  </div>
+</section>
+
+<!-- ====================================================================== -->
+<section>
+  <h2><span class="num">03</span>Опознать провода зонда</h2>
+  <p class="subhead">Мультиметром, до подачи питания</p>
+
+  <p>Сначала — посмотреть описание у продавца, там схема бывает верной. Но проверить всё равно стоит, потому что стоит это две минуты, а ошибка стоит датчика.</p>
+
+  <p>Внутри большинства зондов SHT30 стоит платка с подтяжками на 10 кОм. Это и позволяет опознать провода прозвонкой, ничего не включая. Мультиметр в режим измерения сопротивления:</p>
+
+  <div class="tablewrap">
+    <table>
+      <caption>Ожидаемые сопротивления между парами проводов</caption>
+      <thead><tr><th>Пара</th><th>Показание</th><th>Значит</th></tr></thead>
+      <tbody>
+        <tr><td class="pin">VCC ↔ GND</td><td>единицы кОм и выше, или обрыв</td><td>Питание. Низкое сопротивление здесь — короткое замыкание, ничего не включать.</td></tr>
+        <tr><td class="pin">VCC ↔ SDA</td><td>≈ 10 кОм</td><td>Подтяжка данных</td></tr>
+        <tr><td class="pin">VCC ↔ SCL</td><td>≈ 10 кОм</td><td>Подтяжка тактовой</td></tr>
+        <tr><td class="pin">SDA ↔ SCL</td><td>≈ 20 кОм</td><td>Две подтяжки последовательно</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>Логика простая: провод, который звонится на два других примерно по 10 кОм — это <b>VCC</b>. Провод, который не звонится ни на что — <b>GND</b>. Оставшиеся два — данные, и их между собой не перепутать страшно: если они окажутся наоборот, датчик просто не найдётся на шине, но не сгорит. Поменять местами и попробовать снова.</p>
+
+  <div class="note warn">
+    <span class="tag">Если подтяжек внутри нет</span>
+    <p>Тогда всё звонится как обрыв и метод не работает. В этом случае — только описание продавца, и перед первым включением обязательно проверить, что между предполагаемыми VCC и GND нет короткого.</p>
+  </div>
+
+  <ul class="check" data-group="ident">
+    <li><label><input type="checkbox" id="i-sht"><span class="txt"><strong>Провода SHT30 опознаны и подписаны</strong><span class="sub">Подписать прямо на проводах — маркером по термоусадке. Через месяц цвета уже ничего не напомнят.</span></span></label></li>
+    <li><label><input type="checkbox" id="i-bme"><span class="txt"><strong>Провода BME280 опознаны и подписаны</strong><span class="sub">Датчик ещё не приехал — этот пункт ждёт его.</span></span></label></li>
+  </ul>
+</section>
+
+<!-- ====================================================================== -->
+<section>
+  <h2><span class="num">04</span>Паять</h2>
+  <p class="subhead">Порядок имеет значение</p>
+
+  <ul class="check" data-group="solder">
+    <li><label><input type="checkbox" id="s-gnd"><span class="txt"><strong>Земля</strong><span class="sub">GND платы — на GND обоих датчиков и на минус питания.</span></span></label></li>
+    <li><label><input type="checkbox" id="s-vcc"><span class="txt"><strong>3V3 на оба датчика</strong><span class="sub">И туда же — верхние концы обоих резисторов.</span></span></label></li>
+    <li><label><input type="checkbox" id="s-i2c"><span class="txt"><strong>D4 → SDA, D5 → SCL</strong><span class="sub">Плюс нижние концы резисторов на соответствующие линии.</span></span></label></li>
+    <li><label><input type="checkbox" id="s-check"><span class="txt"><strong>Прозвонить до подачи питания</strong><span class="sub">3V3 ↔ GND не должны звониться накоротко. Это единственная проверка, которая ловит почти все ошибки монтажа.</span></span></label></li>
+    <li><label><input type="checkbox" id="s-pwr"><span class="txt"><strong>Питание — в последнюю очередь</strong><span class="sub">+5 В на площадку 5V, минус на общую землю.</span></span></label></li>
+  </ul>
+
+  <h3>Питание T114 из той же линии</h3>
+
+  <p>Ретранслятор садится на тот же 5-вольтовый провод, но <b>только через свой USB-C</b>.</p>
+
+  <div class="note warn">
+    <span class="tag">Не подавать 5 В на VBAT</span>
+    <p>Вход VBAT рассчитан на литиевый аккумулятор, то есть примерно на 3.7 В. Пять вольт туда — это выход из строя платы, а не «с запасом».</p>
+  </div>
+
+  <p>Если аккумулятор на T114 останется подключённым, он превратится в бесперебойник — полезно. Но с оговоркой: <b>зарядка литиевой банки при отрицательной температуре разрушает её</b>, а контроллеры заряда на таких платах обычно не имеют температурной отсечки. На зиму аккумулятор из уличной коробки лучше вынуть.</p>
+
+  <ul class="check" data-group="t114">
+    <li><label><input type="checkbox" id="t-usb"><span class="txt"><strong>T114 запитан через USB-C от общей линии 5 В</strong></span></label></li>
+    <li><label><input type="checkbox" id="t-bat"><span class="txt"><strong>Решено, что делать с аккумулятором</strong><span class="sub">Оставить как UPS до холодов, или снять сразу.</span></span></label></li>
+  </ul>
+</section>
+
+<!-- ====================================================================== -->
+<section>
+  <h2><span class="num">05</span>Секреты и конфиг</h2>
+  <p class="subhead">На машине, с которой будешь прошивать</p>
+
+  <p>Рядом с <code>weather-outdoor.yaml</code> нужен файл <code>esphome/secrets.yaml</code>. В <code>.gitignore</code> он уже внесён — в репозиторий не уедет.</p>
+
+<pre><code>wifi_ssid: "<span class="c">имя сети 2.4 ГГц</span>"
+wifi_password: "<span class="c">…</span>"
+ap_password: "<span class="c">любой, ≥8 символов</span>"
+ota_password: "<span class="c">любой, для последующих обновлений по воздуху</span>"
+mqtt_password: "<span class="c">пароль weather_collector</span>"</code></pre>
+
+  <p>Последний берётся на докторе — новый аккаунт заводить не нужно, <code>weather_collector</code> уже существует и уже имеет права на всю ветку <code>weather/</code>:</p>
+
+<pre><code>ssh sergey@192.168.1.51
+cd /home/sergey/iot-stack
+grep WEATHER_COLLECTOR_MQTT_PASSWORD .env</code></pre>
+
+  <div class="note warn">
+    <span class="tag">BME280 ещё не приехал</span>
+    <p>Пока его нет — закомментируй в конфиге блок <code>- platform: bme280_i2c</code> целиком. Иначе при старте в логе будет красная строка об ошибке связи по адресу <code>0x76</code>, и ты будешь искать в ней ошибку монтажа, которой нет.</p>
+    <p>SHT30 при этом публикует как ни в чём не бывало — узел работоспособен и без давления.</p>
+  </div>
+
+  <ul class="check" data-group="cfg">
+    <li><label><input type="checkbox" id="c-secrets"><span class="txt"><strong>Создан <code>esphome/secrets.yaml</code></strong></span></label></li>
+    <li><label><input type="checkbox" id="c-pass"><span class="txt"><strong>Пароль <code>weather_collector</code> взят с доктора</strong></span></label></li>
+    <li><label><input type="checkbox" id="c-bme"><span class="txt"><strong>Блок BME280 закомментирован до приезда датчика</strong></span></label></li>
+  </ul>
+</section>
+
+<!-- ====================================================================== -->
+<section>
+  <h2><span class="num">06</span>Первая прошивка</h2>
+  <p class="subhead">По проводу, на столе, до сборки в коробку</p>
+
+<pre><code>cd ~/ha-mqtt-sensor-hub/esphome
+esphome run weather-outdoor.yaml</code></pre>
+
+  <p>Первый раз — обязательно по USB. OTA станет доступна только после того, как прошивка с ним однажды окажется на плате.</p>
+
+  <p>Сразу после загрузки в логе ищи строку сканирования шины. Она — единственное настоящее подтверждение того, что пайка удалась:</p>
+
+<pre><code><span class="c">[I][i2c.idf:...] Results from i2c bus scan:</span>
+<span class="c">[I][i2c.idf:...] Found i2c device at address 0x44</span></code></pre>
+
+  <div class="tablewrap">
+    <table>
+      <caption>Если в сканировании пусто</caption>
+      <thead><tr><th>Что видно</th><th>Причина</th></tr></thead>
+      <tbody>
+        <tr><td>Ни одного адреса</td><td>Нет питания на датчике, нет общей земли, или не припаяны подтяжки. Проверять в этом порядке.</td></tr>
+        <tr><td>Адрес <code>0x45</code> вместо <code>0x44</code></td><td>У зонда вывод ADDR подтянут иначе. Поправить <code>address:</code> в конфиге.</td></tr>
+        <tr><td>Адрес есть, но значения <code>nan</code></td><td>SDA и SCL перепутаны местами. Не смертельно — поменять и перепрошить.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <ul class="check" data-group="flash">
+    <li><label><input type="checkbox" id="f-flash"><span class="txt"><strong>Прошито по USB</strong></span></label></li>
+    <li><label><input type="checkbox" id="f-scan"><span class="txt"><strong>В логе видны ожидаемые адреса на шине</strong></span></label></li>
+    <li><label><input type="checkbox" id="f-wifi"><span class="txt"><strong>Узел подключился к Wi-Fi и к брокеру</strong></span></label></li>
+  </ul>
+</section>
+
+<!-- ====================================================================== -->
+<section>
+  <h2><span class="num">07</span>Приёмка</h2>
+  <p class="subhead">Проверять шину, а не лог устройства</p>
+
+  <p>Лог узла говорит только о том, что узел <i>думает</i>, будто опубликовал. Единственное доказательство — то, что данные видны на брокере. Всё ниже выполняется на докторе, из <code>/home/sergey/iot-stack</code>.</p>
+
+  <h3>Отрицательная проверка — первой</h3>
+
+  <p>Аккаунт <code>weather_collector</code> имеет права ровно на <code>weather/#</code> и ни на что больше. Эта публикация должна быть <b>отклонена</b>; если она пройдёт — права шире, чем задумано, и всё остальное не имеет значения:</p>
+
+<pre><code>docker run --rm --network host eclipse-mosquitto:2.0.22 \
+  mosquitto_pub -V 5 -d -h 192.168.1.51 \
+  -u weather_collector -P 'ПАРОЛЬ' \
+  -t own/somebody-else/temperature -m 1 -q 1
+
+<span class="c"># ожидается: RC:135 Not authorized</span></code></pre>
+
+  <div class="note">
+    <span class="tag">Почему именно так</span>
+    <p>Под MQTT 3.1.1 брокер подтверждает запрещённую публикацию и молча её выбрасывает — <code>mosquitto_pub</code> при этом рапортует об успехе. Ключ <code>-V 5</code> заставляет брокер назвать причину вслух. <code>RC:16</code> означает «принято, подписчиков нет» — это нормально.</p>
+  </div>
+
+  <h3>Положительные проверки</h3>
+
+<pre><code>./scripts/mqtt-watch.sh 'weather/outdoor/#' 90</code></pre>
+
+  <ul class="check" data-group="accept">
+    <li><label><input type="checkbox" id="a-deny"><span class="txt"><strong>Чужой топик отклонён с <code>RC:135</code></strong></span></label></li>
+    <li><label><input type="checkbox" id="a-status"><span class="txt"><strong><code>weather/outdoor/status</code> = <code>online</code></strong></span></label></li>
+    <li><label><input type="checkbox" id="a-meta"><span class="txt"><strong><code>meta</code> пришёл один раз и это корректный JSON</strong><span class="sub">Внутри — модель платы, список датчиков и RSSI на момент подключения.</span></span></label></li>
+    <li><label><input type="checkbox" id="a-vals"><span class="txt"><strong>Идут <code>temperature</code> и <code>humidity</code></strong><span class="sub">Раз в минуту. Давление добавится вместе с BME280.</span></span></label></li>
+    <li><label><input type="checkbox" id="a-time"><span class="txt"><strong><code>last_update</code> — реальное время, а не 1970 год</strong><span class="sub">Отсутствие штампа в первую минуту после включения — правильное поведение: конфиг намеренно не публикует время, пока не синхронизировался NTP. Лучше никакого времени, чем неверное.</span></span></label></li>
+    <li><label><input type="checkbox" id="a-will"><span class="txt"><strong>Выдернуть питание — <code>status</code> становится <code>offline</code></strong><span class="sub">Именно выдернуть. Аккуратная перезагрузка это <b>не</b> проверяет: завещание отправляется только при неожиданном обрыве.</span></span></label></li>
+    <li><label><input type="checkbox" id="a-ret"><span class="txt"><strong>Свежий подписчик сразу получает последние значения</strong><span class="sub"><code>./scripts/mqtt-watch.sh 'weather/outdoor/#' 5</code> — значения должны прийти мгновенно, это и есть retained.</span></span></label></li>
+  </ul>
+</section>
+
+<!-- ====================================================================== -->
+<section>
+  <h2><span class="num">08</span>Куда вешать</h2>
+  <p class="subhead">Ниша под балконом: что она решает и что нет</p>
+
+  <p>Метр глухого бетона сверху и сплошные простенки по бокам означают, что прямое солнце туда не попадает физически. <b>Радиационный экран строить не нужно.</b></p>
+
+  <p>Но враг поменялся, а не исчез. Теперь это сам бетон: за день плита и стены прогреваются от воздуха, ночью отдают тепло вниз. Отсюда единственное правило — <b>датчик висит в воздухе, а не крепится к поверхности</b>.</p>
+
+  <div class="placement">
+    <div class="place yes"><span class="mark">✓</span><span class="body"><b>Зонды свисают вниз, сантиметрах в тридцати от стены, рядом друг с другом</b><span class="sub">Меряют воздух, а не бетон. Рядом — чтобы перекрёстная проверка SHT30 против BME280 имела смысл.</span></span></div>
+    <div class="place yes"><span class="mark">✓</span><span class="body"><b>Коробка с платой — на раме или боковой стене, глубже, в сухом</b><span class="sub">Она греет сама себя на 1–3 °C. Ради этого зонды и вынесены на провод.</span></span></div>
+    <div class="place no"><span class="mark">✕</span><span class="body"><b>Глубокий угол ниши</b><span class="sub">Застойный воздух и сразу три излучающие поверхности.</span></span></div>
+    <div class="place no"><span class="mark">✕</span><span class="body"><b>Горизонтальная бетонная полка</b><span class="sub">Лежащий на бетоне датчик меряет бетон.</span></span></div>
+    <div class="place no"><span class="mark">✕</span><span class="body"><b>У самого края плиты</b><span class="sub">На фотографиях вдоль края тёмная полоса — это линия стока воды. Зонд SHT30 герметичен и переживёт, голая платка BME280 — нет.</span></span></div>
+  </div>
+
+  <div class="note">
+    <span class="tag">Одна погрешность останется</span>
+    <p>Под плитой датчик не видит холодного неба, поэтому ночи будут читаться примерно на 0.5–1 °C теплее, чем в настоящей метеобудке. На балконе это неустранимо. Знать о ней стоит: она объясняет расхождение с городскими сводками, и это не поломка.</p>
+  </div>
+
+  <ul class="check" data-group="mount">
+    <li><label><input type="checkbox" id="m-box"><span class="txt"><strong>Коробка закреплена под козырьком, в сухом</strong></span></label></li>
+    <li><label><input type="checkbox" id="m-probe"><span class="txt"><strong>Зонды висят в воздухе, не касаясь бетона</strong></span></label></li>
+    <li><label><input type="checkbox" id="m-vent"><span class="txt"><strong>Вентиляционное отверстие смотрит вниз</strong></span></label></li>
+    <li><label><input type="checkbox" id="m-rssi"><span class="txt"><strong>Wi-Fi добивает на месте</strong><span class="sub">Значение <code>rssi_at_connect</code> в топике <code>meta</code> отвечает на этот вопрос, не требуя лезть в коробку.</span></span></label></li>
+  </ul>
+</section>
+
+<!-- ====================================================================== -->
+<section>
+  <h2><span class="num">09</span>Остаётся на докторе</h2>
+  <p class="subhead">Паяльник не нужен, но без этого узел не доедет до дашборда</p>
+
+  <ul class="check" data-group="server">
+    <li><label><input type="checkbox" id="v-inputs"><span class="txt"><strong>Урезать <code>expected_inputs</code> в <code>weather-engine/config.yaml</code></strong><span class="sub">Сейчас там четыре величины, включая ветер, которого нет. Пока не приехал BME280 — оставить <code>[temperature, humidity]</code>, потом добавить <code>pressure</code>. Иначе движок навсегда останется в состоянии <code>partial</code>. Файл живёт только на докторе, в git его нет. После правки: <code>docker compose restart weather-engine</code>.</span></span></label></li>
+    <li><label><input type="checkbox" id="v-entity"><span class="txt"><strong>Завести сущность под <code>temperature_secondary</code> в Home Assistant</strong><span class="sub">Плюс проверку расхождения между двумя датчиками. Появится в репозитории отдельным пакетом.</span></span></label></li>
+    <li><label><input type="checkbox" id="v-ids"><span class="txt"><strong>После добавления сущностей — <code>./scripts/normalize-entity-ids.sh</code></strong><span class="sub">Иначе идентификаторы получатся вида <code>sensor.outdoor_weather_station_outdoor_temperature</code>, а дашборды ссылаются на короткие.</span></span></label></li>
+    <li><label><input type="checkbox" id="v-offset"><span class="txt"><strong>Неделю ничего не делать с расхождением, просто смотреть</strong><span class="sub">У двух датчиков в одной коробке всегда есть постоянная разница. Порог тревоги имеет смысл выбирать по измеренной разнице, а не по паспортной точности — иначе он будет срабатывать каждый солнечный день.</span></span></label></li>
+  </ul>
+</section>
+
+<footer>
+  <p>Конфиг: <code>esphome/weather-outdoor.yaml</code> — проходит <code>esphome config</code> на версии 2026.8.2, на плату не заливался. Контракт топиков: <code>MQTT.md</code> §2. Почему станция публикует в <code>weather/outdoor/</code>, а не в <code>own/</code>: <code>DECISIONS.md</code> D-013.</p>
+  <p>Отметки сохраняются в этом браузере и переживают перезагрузку страницы. На другое устройство они не переедут.</p>
+</footer>
+
+</div>
+
+<script>
+(function () {
+  var boxes = Array.prototype.slice.call(document.querySelectorAll('.check input[type="checkbox"]'));
+  var count = document.getElementById('count');
+  var fill  = document.getElementById('fill');
+  var reset = document.getElementById('reset');
+  var KEY = 'wnode:';
+
+  function store(k, v) {
+    try { window.localStorage.setItem(KEY + k, v ? '1' : '0'); } catch (e) { /* private mode */ }
+  }
+  function load(k) {
+    try { return window.localStorage.getItem(KEY + k) === '1'; } catch (e) { return false; }
+  }
+
+  function paint() {
+    var done = boxes.filter(function (b) { return b.checked; }).length;
+    count.textContent = done + ' / ' + boxes.length;
+    fill.style.width = boxes.length ? (done / boxes.length * 100) + '%' : '0%';
+  }
+
+  boxes.forEach(function (b) {
+    b.checked = load(b.id);
+    b.addEventListener('change', function () { store(b.id, b.checked); paint(); });
+  });
+
+  reset.addEventListener('click', function () {
+    boxes.forEach(function (b) { b.checked = false; store(b.id, false); });
+    paint();
+  });
+
+  paint();
+})();
+</script>

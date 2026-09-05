@@ -3,22 +3,25 @@
 ## The shape of it
 
 ```text
-  Outdoor weather sensors            Third-party 433/868 MHz + BLE sensors
-            │                                        │
-            ▼                                        │
-      T114 / MeshCore                                │
-            │                                        │
-            ▼                                        ▼
-    MeshCore Companion                    RF/BLE Sensor Collector
-     (USB / BLE / TCP)                    (repurposed Tuya IR/RF remote)
-            │                                        │
-            │  meshcore-ha over TCP                  │  normalized telemetry
-            │  (single owner — D-001)                │  sensors/…  +  discovery
-            ▼                                        ▼
-   ┌───────────────────────────────────────────────────────────────┐
-   │                    Mosquitto  ·  doctor:1883                  │
-   │   auth + ACL, retained state, persistent across restarts      │
-   └───────────────────────────────────────────────────────────────┘
+  Outdoor weather      MeshCore mesh       Third-party 433/868    Zigbee devices
+  node — SHT30 +       nodes (T114)        MHz + BLE sensors      (none paired yet)
+  BME280 on a XIAO           │                      │                    │
+        │                    ▼                      │                    ▼
+        │            MeshCore Companion             ▼              ZB-GW04 stick
+        │            (USB / BLE / TCP)      RF/BLE Sensor          EmberZNet 8.0.3
+        │                    │              Collector                    │
+        │ Wi-Fi              │ meshcore-ha  (Tuya IR/RF remote)          ▼
+        │ ESPHome mqtt:      │ over TCP             │                Zigbee2MQTT
+        │ weather/outdoor/…  │ single owner         │                :8099 web UI
+        │                    ▼                      │                    │
+        │             Home Assistant                │ sensors/…          │
+        │             mirror automation             │ + discovery        │
+        │                    │ meshcore/… — D-011   │                    │
+        ▼                    ▼                      ▼                    ▼
+   ┌───────────────────────────────────────────────────────────────────────┐
+   │                       Mosquitto  ·  doctor:1883                       │
+   │       auth + ACL, retained state, persistent across restarts          │
+   └───────────────────────────────────────────────────────────────────────┘
         │                    │                       │
         │                    │                       │
         ▼                    ▼                       ▼
@@ -35,6 +38,22 @@
 
 Doctor (192.168.1.51) is the centre. Nothing in the weather path leaves the
 house.
+
+Two things in that picture are worth reading twice.
+
+**The weather node talks to the broker directly, over Wi-Fi.** It used to be
+drawn going through the mesh, and that is no longer true: D-013 moved outdoor
+weather off MeshCore, because a radio designed to move a few bytes an hour
+between distant nodes is the wrong carrier for a sensor forty metres away with
+mains power. `esphome/weather-outdoor.yaml` publishes straight into
+`weather/outdoor/…` with no gateway in between.
+
+**MeshCore is the one source that reaches MQTT through Home Assistant**, and it
+is the single exception to the rule stated below. The integration owns the
+radio and speaks only to Home Assistant; an automation republishes an allow-list
+of node metrics into `meshcore/…`. That inversion is deliberate and costed in
+D-011 — it buys the mesh's own telemetry at the price of Home Assistant being
+in that one path. Every other source publishes to the broker first.
 
 ---
 
@@ -102,6 +121,24 @@ The documented deployment mode, and here it earns its keep three times:
 `iot-stack_mosquitto_data` holds retained messages and queued QoS-1 traffic. It
 is a named volume rather than a bind mount so the container's own uid owns it
 without any host-side chown, and it survives `docker compose down`.
+
+### The Zigbee radio is owned outside Home Assistant
+
+Zigbee2MQTT holds the coordinator; Home Assistant subscribes. The alternative,
+ZHA, would have put the whole Zigbee network inside the consumer — device state
+in Home Assistant's own store, invisible to the watches, to `weather-engine`
+and to any future subscriber, all of which speak only MQTT. That is the same
+data-direction argument that put the broker at the centre in the first place,
+applied to one more radio, and `DECISIONS.md` D-014 records it in full.
+
+It buys a second property that matters more day to day: restarting or rebuilding
+Home Assistant no longer touches the Zigbee network. Devices keep reporting into
+retained topics and HA catches up from them, exactly as it does for weather.
+
+The cost is honest and small — one more container, one more account, and a
+`devices:` mapping that ties the stack to a physical stick by `/dev/serial/by-id`.
+With the stick unplugged the container refuses to start, which is the failure
+you want: loud, immediate, and not a bridge quietly running with no radio.
 
 ### Entity ids live in the registry, not in YAML
 

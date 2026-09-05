@@ -5,6 +5,8 @@ mqtt-credentials.txt
 mosquitto/config/passwd
 mosquitto/config/passwd.*
 homeassistant/config/secrets.yaml
+esphome/secrets.yaml
+zigbee2mqtt/data/
 weather-engine/config.yaml
 
 # --- runtime / persistent data ---

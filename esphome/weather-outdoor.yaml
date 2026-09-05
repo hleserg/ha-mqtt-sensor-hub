@@ -1,0 +1,211 @@
+# =============================================================================
+#  The outdoor weather station — XIAO ESP32C3 + SHT30 + BME280.
+#
+#  This node fills the `weather/outdoor/…` ROLE (MQTT.md §2): the reading the
+#  derivations use. It is not an `own/` sensor — see the note in §2 about the
+#  difference, and D-013 for why the distinction exists at all.
+#
+#  Derived from own-sensor-reference.yaml, which stays as the template for
+#  `own/` sensors. Four things carried over unchanged, because they are the
+#  whole reason that file exists:
+#
+#    1. per-entity `state_topic:` — the topic is the station's contract, not the
+#       entity name inside this firmware;
+#    2. `last_update` — the time of the MEASUREMENT, guarded on the clock;
+#    3. `meta` — published on CONNECT, so a topic dump says what the hardware is;
+#    4. `discovery: false` — the entities are declared in
+#       packages/weather_outdoor.yaml and already exist.
+#
+#  NOT YET FLASHED, but `esphome config` passes on 2026.8.2. Treat the first
+#  flash as the test and work the checklist at the bottom of
+#  own-sensor-reference.yaml — it applies here almost verbatim, with
+#  `own/${sensor_id}` read as `weather/outdoor`.
+# =============================================================================
+
+substitutions:
+  node_name: weather-outdoor
+  friendly: "Outdoor Weather Station"
+  # No new broker account. `weather_collector` already exists and already holds
+  # `topic write weather/#`, which covers every topic below including
+  # temperature_secondary. Nothing in acl.conf needs editing for this node.
+  mqtt_user: weather_collector
+
+esphome:
+  name: ${node_name}
+  friendly_name: ${friendly}
+
+# Seeed XIAO ESP32C3 — the board name resolves in 2026.8.2, checked.
+esp32:
+  board: seeed_xiao_esp32c3
+  variant: esp32c3
+  framework:
+    type: esp-idf
+
+logger:
+  level: INFO
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  fast_connect: true
+  ap:
+    ssid: "${node_name} fallback"
+    password: !secret ap_password
+
+captive_portal:
+
+# UTC on purpose: `last_update` is ISO-8601 UTC everywhere in this stack, and
+# converting in two places is how the two stop agreeing. NTP is on the LAN — a
+# station that cannot reach the internet must still keep correct time.
+time:
+  - platform: sntp
+    id: node_time
+    timezone: UTC
+    servers:
+      - 192.168.1.1
+      - 192.168.1.51
+
+mqtt:
+  id: mqtt_client
+  broker: 192.168.1.51
+  port: 1883
+  username: ${mqtt_user}
+  password: !secret mqtt_password
+  client_id: ${node_name}
+  topic_prefix: weather/outdoor
+
+  # The entities live in packages/weather_outdoor.yaml and predate this node by
+  # weeks. Discovery would create a second, competing set with generated ids.
+  discovery: false
+
+  birth_message:
+    topic: weather/outdoor/status
+    payload: online
+    qos: 1
+    retain: true
+  will_message:
+    topic: weather/outdoor/status
+    payload: offline
+    qos: 1
+    retain: true
+  log_topic: null
+
+  on_connect:
+    - script.execute: publish_meta
+
+script:
+  - id: publish_meta
+    then:
+      - mqtt.publish:
+          topic: weather/outdoor/meta
+          retain: true
+          qos: 1
+          payload: !lambda |-
+            std::string s = "{\"source\":\"xiao-esp32c3\",";
+            s += "\"sensor_id\":\"${node_name}\",";
+            s += "\"firmware\":\"" + std::string(ESPHOME_VERSION) + "\",";
+            s += "\"sensors\":[\"sht30\",\"bme280\"],";
+            s += "\"metrics\":[\"temperature\",\"humidity\",\"pressure\"],";
+            s += "\"rssi_at_connect\":" + to_string((int) wifi::global_wifi_component->wifi_rssi()) + "}";
+            return s;
+
+  # The measurement timestamp. Fired by a reading, never by a timer.
+  #
+  # Guarded on the clock: before SNTP syncs, now() is 1970, and publishing that
+  # would age every reading by fifty-six years. No timestamp is better than a
+  # wrong one — the value still goes out, it just carries no stamp until the
+  # clock is real.
+  - id: stamp_measurement
+    then:
+      - lambda: |-
+          auto t = id(node_time).now();
+          if (!t.is_valid()) {
+            ESP_LOGW("weather", "clock not set yet — skipping last_update");
+            return;
+          }
+          char buf[32];
+          t.strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%SZ");
+          id(mqtt_client)->publish(std::string("weather/outdoor/last_update"),
+                                   std::string(buf), 1, true);
+
+# XIAO ESP32C3: D4 = GPIO6 (SDA), D5 = GPIO7 (SCL) — the pins actually silk-
+# screened SDA/SCL on the board. GPIO4/GPIO5 are D2/D3 and would work equally
+# well; matching the silkscreen is for whoever opens the box in the rain.
+#
+# 50 kHz rather than the 100 kHz default. Both sensors sit on 30-50 cm leads,
+# so bus capacitance is nowhere near the 400 pF limit and speed is not the
+# reason — the readings are 60 s apart. The slower edge is free margin against
+# damp and condensation on outdoor contacts, which is the failure that actually
+# happens here.
+#
+# The ESP32's internal pullups come on by default and are ~45 kOhm — nowhere near
+# enough for I2C, in any weather. Solder 4.7 kOhm from each line to 3V3. If the
+# breakouts already carry their own 10 kOhm, the parallel result is ~3 kOhm,
+# which is still well inside spec — so fitting them is safe either way.
+i2c:
+  sda: GPIO6
+  scl: GPIO7
+  frequency: 50kHz
+  scan: true
+
+sensor:
+  # ---------------------------------------------------------------- SHT30 ---
+  # The authority for temperature and humidity: +-0.2 C and +-2 %RH against the
+  # BME280's +-0.5..1 C and +-3 %. It lives outside in its probe, in the shade.
+  - platform: sht3xd
+    address: 0x44
+    update_interval: 60s
+
+    # Explicitly off. The heater exists to burn condensation off the element,
+    # and it warms the die by whole degrees while it runs — which is exactly
+    # what a thermometer must not do. If the probe ever fogs up in practice,
+    # pulse it deliberately rather than leaving it on.
+    heater_enabled: false
+
+    temperature:
+      name: "Outdoor Temperature"
+      state_topic: weather/outdoor/temperature
+      accuracy_decimals: 2
+      on_value:
+        - script.execute: stamp_measurement
+
+    humidity:
+      name: "Outdoor Humidity"
+      state_topic: weather/outdoor/humidity
+      accuracy_decimals: 1
+      on_value:
+        - script.execute: stamp_measurement
+
+  # --------------------------------------------------------------- BME280 ---
+  # Here for pressure, which the SHT30 cannot measure at all. Its temperature is
+  # published too, but as `temperature_secondary` — a cross-check, never an
+  # input to anything derived. Two topics, one writer each; the single-owner
+  # rule is about one VALUE, not one device.
+  #
+  # Its humidity is deliberately not published: the BME280 hygrometer is the
+  # weakest thing in this box and drifts, and a second humidity number nobody
+  # reads is just a row to maintain.
+  - platform: bme280_i2c
+    address: 0x76
+    update_interval: 60s
+
+    # Pressure at the surface moves slowly; the IIR filter kills the per-sample
+    # noise that would otherwise show up as a jittery graph.
+    iir_filter: 16x
+
+    pressure:
+      name: "Outdoor Pressure"
+      state_topic: weather/outdoor/pressure
+      accuracy_decimals: 1
+      # Deliberately does NOT stamp last_update. That stamp covers the whole
+      # input set, so a BME280 still ticking over a dead SHT30 would report a
+      # stale retained temperature as fresh. Only the primary sensor stamps.
+
+    temperature:
+      name: "Outdoor Temperature (secondary)"
+      state_topic: weather/outdoor/temperature_secondary
+      accuracy_decimals: 2

@@ -8,6 +8,7 @@ Five cases. Read `MQTT.md` first — it is the contract every one of them follow
 | a device that fills the weather-station role | case 1 |
 | somebody else's transmitter you picked up off the air | case 2 |
 | a MeshCore node | case 3 |
+| a Zigbee device you can put into pairing mode | **case 6** — the one that needs no configuration here |
 | a new kind of publisher entirely | case 4 |
 
 The numbering is historical and stays put: `SENSORS.md §2` is referenced from
@@ -21,6 +22,13 @@ to put the common case first would break all three for a cosmetic gain.
 The station's entities already exist in Home Assistant
 (`homeassistant/config/packages/weather_outdoor.yaml`). Nothing to configure —
 just publish.
+
+**There is a worked example now.** `esphome/weather-outdoor.yaml` is a real
+node filling this role: a XIAO ESP32C3 with an SHT30 for temperature and
+humidity and a BME280 for pressure, both on short probe leads. It does
+everything in the list below and is the shortest path to a second station —
+copy it rather than re-deriving the contract. What to solder and in what order
+is in `esphome/weather-outdoor-build.html`.
 
 **Credentials:** the `weather_collector` account. Get the password with:
 
@@ -39,7 +47,7 @@ grep WEATHER_COLLECTOR /home/sergey/iot-stack/.env
 5. Publish `weather/outdoor/last_update` with the ISO-8601 UTC time **of the
    measurement**.
 6. Once at startup, publish `weather/outdoor/meta`:
-   `{"source":"esp32-weather","sensor_id":"outdoor-01","firmware":"1.4.2"}`
+   `{"source":"xiao-esp32c3","sensor_id":"weather-outdoor","firmware":"2026.8.2"}`
 
 Steps 2, 3, 5 and 6 are not optional decoration: without them Home Assistant
 cannot tell a silent sensor from a calm day.
@@ -324,6 +332,44 @@ expect never lifts the grade, and one it expects but cannot reach pins it at
 Building up over time is the normal case: declare only what exists today. A node
 that measures temperature, humidity and pressure is **complete** and should read
 `ok`. The day the anemometer goes up, `wind_speed` joins the list.
+
+---
+
+## 6. A Zigbee device
+
+The odd one out, and worth its own case precisely because it needs almost
+nothing from this document. No broker account, no ACL line, no YAML, no
+discovery config to write: Zigbee2MQTT owns the radio and publishes both the
+state and the discovery config itself (`MQTT.md` §6b, `DECISIONS.md` D-014).
+
+The whole procedure:
+
+1. Permit join on, in the web UI at <http://192.168.1.51:8099>.
+2. Put the device into pairing mode. Physical — a long press, usually.
+3. **Rename it before doing anything else.** The friendly name becomes the
+   topic segment *and* the entity id, so a rename later moves the topic and
+   breaks whatever referenced it. Name it for the place, by the same rule as
+   case 5: `kitchen-window`, not `aqara-1`.
+4. Permit join off.
+
+Then confirm it on the bus rather than in the UI, which is the same discipline
+as every other case here:
+
+```sh
+./scripts/mqtt-watch.sh 'zigbee2mqtt/#'
+```
+
+**Where it differs from case 2.** A third-party RF sensor has to be
+allow-listed, because anything within radio range would otherwise become an
+entity. A Zigbee device does not, because pairing *is* the allow-list — it only
+joined because someone held a button on it. Do not copy case 2's gate here; it
+would be ceremony with nothing to protect against.
+
+**What it does not get.** Freshness handling of the kind in `MQTT.md` §7 is not
+wired up for these. Zigbee devices announce their own availability through the
+bridge, which is adequate for a switch and *not* adequate for anything feeding
+the weather engine. If a Zigbee sensor ever becomes an input to a derived value,
+give it the case 5 treatment first.
 
 ---
 

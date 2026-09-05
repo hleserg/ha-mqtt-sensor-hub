@@ -35,6 +35,21 @@ input_number:
     icon: mdi:timer-off
     mode: box
 
+  # How far the station's two thermometers may drift apart before one of them
+  # is presumed to be failing. 2 degrees is a starting guess, not a measurement:
+  # SHT30 and BME280 tolerances only stack to about 1.2 C, but two sensors in
+  # one enclosure also differ for real, physical reasons that no datasheet
+  # covers. Watch the actual gap for a week, then set this from what it does.
+  outdoor_divergence_limit:
+    name: Outdoor thermometer divergence limit
+    min: 0.5
+    max: 10
+    step: 0.1
+    initial: 2.0
+    unit_of_measurement: "°C"
+    icon: mdi:thermometer-alert
+    mode: box
+
 template:
   # Re-evaluated every 30 s, and immediately whenever a new measurement lands,
   # so the age keeps counting up while the station is silent.
@@ -119,3 +134,73 @@ template:
           {% else %}
             {{ t }} °C ({{ (age / 60) | round(0) }} min old)
           {% endif %}
+
+# =============================================================================
+#  Two thermometers, one box  —  the cross-check
+# =============================================================================
+#  The station carries an SHT30 (the authority: +-0.2 C) and a BME280 (there for
+#  pressure, +-0.5..1.0 C). Neither can tell you it has started lying. Together
+#  they can: a gap that opens and stays open is a failing sensor, a wet probe,
+#  or one of the two sitting somewhere the other is not.
+#
+#  Two things keep this from becoming a nuisance alarm:
+#
+#    * It reports nothing at all unless BOTH readings are real numbers. Until a
+#      BME280 is fitted the secondary is `unknown`, and a comparison against
+#      nothing must not read as agreement OR as a fault.
+#    * The alarm needs the gap to persist for half an hour. The two sensors have
+#      different thermal masses and are not in the same airflow, so sunrise, a
+#      gust and a rain shower all open a gap briefly and legitimately. Only a
+#      gap that outlives the weather means anything.
+# =============================================================================
+
+  - sensor:
+      - name: "Outdoor Thermometer Divergence"
+        unique_id: outdoor_thermometer_divergence
+        unit_of_measurement: "°C"
+        device_class: temperature
+        state_class: measurement
+        icon: mdi:arrow-expand-vertical
+        entity_category: diagnostic
+        state: >
+          {% set a = states('sensor.outdoor_temperature') %}
+          {% set b = states('sensor.outdoor_temperature_secondary') %}
+          {% if a in ['unknown','unavailable','none',''] or b in ['unknown','unavailable','none',''] %}
+            {{ none }}
+          {% else %}
+            {{ (a | float - b | float) | abs | round(2) }}
+          {% endif %}
+        attributes:
+          primary: "{{ states('sensor.outdoor_temperature') }}"
+          secondary: "{{ states('sensor.outdoor_temperature_secondary') }}"
+          # Signed, because which way round it goes is the diagnosis. A BME280
+          # persistently warmer than the SHT30 is the enclosure heating itself;
+          # persistently colder is usually the SHT30's heater or a wet probe.
+          signed: >
+            {% set a = states('sensor.outdoor_temperature') %}
+            {% set b = states('sensor.outdoor_temperature_secondary') %}
+            {% if a in ['unknown','unavailable','none',''] or b in ['unknown','unavailable','none',''] %}
+              unknown
+            {% else %}
+              {{ (a | float - b | float) | round(2) }}
+            {% endif %}
+
+    binary_sensor:
+      - name: "Outdoor Thermometers Disagree"
+        unique_id: outdoor_thermometers_disagree
+        device_class: problem
+        icon: mdi:thermometer-alert
+        # Half an hour over the limit before this trips. `delay_off` is
+        # deliberately absent: once the gap closes the fault is over, and there
+        # is nothing to be gained by holding the alarm on.
+        delay_on: "00:30:00"
+        state: >
+          {% set d = states('sensor.outdoor_thermometer_divergence') %}
+          {% if d in ['unknown','unavailable','none',''] %}
+            false
+          {% else %}
+            {{ d | float > states('input_number.outdoor_divergence_limit') | float(default=2.0) }}
+          {% endif %}
+        attributes:
+          divergence: "{{ states('sensor.outdoor_thermometer_divergence') }}"
+          limit: "{{ states('input_number.outdoor_divergence_limit') }}"
