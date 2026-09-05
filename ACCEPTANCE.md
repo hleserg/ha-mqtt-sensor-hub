@@ -15,6 +15,8 @@ verified, it says so.
 | Home Assistant | **2026.8.2** — `homeassistant/home-assistant:stable`, container `iot-homeassistant` |
 | Mosquitto | **2.0.22** — `eclipse-mosquitto:2.0.22`, container `iot-mosquitto` |
 | weather-engine | built from `weather-engine/`, container `iot-weather-engine` — part of the default stack since 2026-08-20 |
+| Zigbee2MQTT | **2.14.1** — `koenkk/zigbee2mqtt:2.14.1`, container `iot-zigbee2mqtt` — part of the default stack since 2026-09-05 |
+| Zigbee coordinator | ZB-GW04 stick, reflashed to **EmberZNet 8.0.3 [GA]**, EZSP v16, build 581 — passed through as `/dev/serial/by-id/usb-1a86_USB_Serial-if00-port0` |
 | Backups | `/mnt/backup/iot-stack/` |
 
 Both versions were read back from the running containers, not from the compose
@@ -45,6 +47,7 @@ the firewall rule is reinstated at boot by `iot-stack-firewall.service`
 |---|---|---|
 | 1883 | Mosquitto | LAN only — enforced in iptables, see below. Never port-forwarded |
 | 8123 | Home Assistant | LAN, via the pre-existing ufw rule (host networking) |
+| 8099 | Zigbee2MQTT web UI | LAN. Pairing and OTA only; no authentication is configured on it, so it is one more reason 8099 must never be forwarded |
 | 9001 | MQTT over websockets | off — commented out in `mosquitto.conf` |
 
 `ss -lntp` shows 1883 bound on `0.0.0.0` by `docker-proxy`. **That binding is not
@@ -79,19 +82,20 @@ and no port forwarding was created.
 
 ## 3. Accounts and permissions
 
-Anonymous access is off. Eight accounts exist, each confined to its own
+Anonymous access is off. Nine accounts exist, each confined to its own
 namespace:
 
 ```
 homeassistant  weather_collector  rf_collector  watch
 weather_engine meshcore           rtl433        monitor
+zigbee2mqtt
 ```
 
 Passwords live in `.env` on doctor (chmod 600, gitignored, never committed);
 only the key names appear in any document. `mosquitto/config/passwd` holds the
 hashes and is rebuildable from `.env` via `scripts/gen-secrets.sh`.
 
-A ninth account, `normalizer`, has ACL rules and no password entry — inert until
+A tenth account, `normalizer`, has ACL rules and no password entry — inert until
 the service exists (`MQTT.md` §13). Own Wi-Fi sensors get one account each, named
 as the sensor, scoped by two **global** pattern rules rather than by a block of
 their own (`MQTT.md` §14). None exist yet: no sensor has been built.
@@ -103,6 +107,27 @@ and silently drops it, so the script reported success and nothing happened. The
 rule was added to the `user homeassistant` block; the symptom and the fix are
 now in `TROUBLESHOOTING.md`, and the permission is listed in `MQTT.md`
 §11.
+
+**And it happened a second time, on 2026-09-06, with Zigbee.** The
+`zigbee2mqtt` account was added correctly, and `homeassistant` was given
+`read zigbee2mqtt/#` — but no write rule. Every discovery config the bridge
+publishes names a command topic, so Home Assistant would have shown each paired
+device correctly and been unable to command any of it, and the bridge's own
+permit-join, restart and log-level entities would have been dead on arrival.
+Measured, not read:
+
+| Publish as `homeassistant` | Result |
+|---|---|
+| `zigbee2mqtt/probe_nonexistent/set` | `RC:135` **not authorized** |
+| `monitor/aclprobe` (control) | `RC:16` accepted |
+
+Fixed with three narrow rules — `zigbee2mqtt/+/set`, `zigbee2mqtt/+/set/#`,
+`zigbee2mqtt/bridge/request/#` — rather than `readwrite zigbee2mqtt/#`, so
+Home Assistant may command a device and still may not write its state. The
+network was empty when this was found, so nothing had failed in the field yet.
+That is twice the same defect from the same cause; the general rule is in
+`MQTT.md` §11 and it is worth restating: **a read grant is never enough for an
+integration that also commands, and MQTT 3.1.1 will not tell you.**
 
 ---
 

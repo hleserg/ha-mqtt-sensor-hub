@@ -2,13 +2,14 @@
 # =============================================================================
 #  Stack health check.
 # =============================================================================
-#  Checks the six things that actually break:
+#  Checks the seven things that actually break:
 #    1. Mosquitto alive and accepting authenticated connections
 #    2. Home Assistant answering on 8123
 #    3. disk usage on doctor
 #    4. container restart loops
 #    5. MQTT round-trip: publish -> broker -> subscribe
 #    6. weather-engine reporting itself online on the bus
+#    7. zigbee2mqtt reporting itself online on the bus
 #
 #  Exit code 0 = all good, 1 = at least one failure. Safe to run from cron or
 #  to point uptime-kuma at.
@@ -67,7 +68,7 @@ fi
 # --- 4. restart loops ------------------------------------------------------
 # A container that keeps dying is usually still "Up" a second later, so status
 # alone lies. RestartCount over a short uptime is the honest signal.
-for c in iot-mosquitto iot-homeassistant iot-weather-engine; do
+for c in iot-mosquitto iot-homeassistant iot-weather-engine iot-zigbee2mqtt; do
   if ! docker inspect "$c" >/dev/null 2>&1; then
     fail "$c does not exist"
     continue
@@ -120,6 +121,19 @@ case "${engine_status:-}" in
   online)  ok "weather-engine reports online on weather_state/engine_status" ;;
   offline) fail "weather-engine reports offline (last will fired, or stopped)" ;;
   *)       fail "weather-engine has never published engine_status" ;;
+esac
+
+# --- 7. zigbee bridge ------------------------------------------------------
+# Same shape and same reason as check 6: `zigbee2mqtt/bridge/state` is the
+# bridge's last will, so a wedged bridge reads `offline` here while the
+# container still looks fine above. The payload is JSON, not a bare word.
+z2m_state=$(docker run --rm --network host \
+  -e H="$HOST" -e P="$PORT" -e U="$MONITOR_MQTT_USER" -e W="$MONITOR_MQTT_PASSWORD" \
+  "$IMAGE" sh -c 'mosquitto_sub -h "$H" -p "$P" -u "$U" -P "$W" -t zigbee2mqtt/bridge/state -C 1 -W 5' 2>/dev/null)
+case "${z2m_state:-}" in
+  *'"online"'*)  ok "zigbee2mqtt reports online on zigbee2mqtt/bridge/state" ;;
+  *'"offline"'*) fail "zigbee2mqtt reports offline (last will fired, or stopped)" ;;
+  *)             fail "zigbee2mqtt has never published bridge/state (got '${z2m_state:-nothing}')" ;;
 esac
 
 [ "$QUIET" -eq 1 ] || echo

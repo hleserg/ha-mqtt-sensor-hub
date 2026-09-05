@@ -11,9 +11,30 @@
 | **Weather history** | `homeassistant/config/home-assistant_v2.db` | **no** — this is the training data |
 | Broker retained state | volume `iot-stack_mosquitto_data` | no, but it refills on the next transmission |
 | MeshCore integration | `homeassistant/config/custom_components/` | yes — reinstall script |
+| **Zigbee network key + paired devices** | `zigbee2mqtt/data/` | **no** — losing it means walking to every device and re-pairing it |
 
-The one genuinely irreplaceable thing is the recorder database. Everything else
-is either in git or costs ten minutes.
+Two things are genuinely irreplaceable: the recorder database and the
+Zigbee2MQTT data directory. Everything else is either in git or costs ten
+minutes.
+
+`zigbee2mqtt/data/` is gitignored — it holds `secret.yaml`, the network key and
+`database.db` — but it is **not** excluded from the archive, and that is
+deliberate. The network key is what every paired device authenticates against;
+restore it and the devices rejoin on their own, lose it and each one has to be
+put back into pairing mode by hand. It therefore only exists in `--full`
+archives in any useful sense, and it is one more reason those archives are
+treated as secret: anyone holding one holds the key to the Zigbee network.
+
+Two caveats worth knowing before you rely on a restore:
+
+- `database.db` is written live, so an archive taken mid-write can be torn. In
+  practice it is only written when a device reports, and the daily run is at
+  04:30. If a Zigbee restore ever matters enough to rehearse, stop the bridge
+  first: `docker compose stop zigbee2mqtt && ./scripts/backup.sh --full`.
+- Restoring the data directory alone is not enough if the **coordinator** has
+  been reflashed or replaced. The stick stores its own network parameters; a
+  mismatch between it and `database.db` is what the bridge means when it logs
+  that the adapter does not match the config.
 
 ## Taking a backup
 

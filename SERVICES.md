@@ -13,6 +13,7 @@
 | Home Assistant | `iot-homeassistant` | 8123 | `docker compose` | entities, history, dashboards, automations |
 | MeshCore integration | inside HA | — | HA config entry | owns the Companion over TCP → node telemetry |
 | weather-engine | `iot-weather-engine` | — | `docker compose` | derives `feels_like`, frost/ice risk and `data_quality` into `weather_state/` |
+| Zigbee2MQTT | `iot-zigbee2mqtt` | 8099 (web UI) | `docker compose` | owns the Zigbee coordinator; devices reach HA over MQTT Discovery |
 | rtl_433 | `iot-rtl433` | — | profile `rtl433`, **off** | SDR bridge; no dongle attached |
 
 Everything lives in `/home/sergey/iot-stack` and is defined by one
@@ -45,6 +46,17 @@ What survives what:
   stamp and `weather_state/engine_status` flips to `offline` through the last
   will. No measurement is lost; nothing upstream of it notices. It reads
   `weather/#` and writes `weather_state/#` and touches nothing else.
+- **Zigbee2MQTT down** — Zigbee devices stop reporting and stop accepting
+  commands; `zigbee2mqtt/bridge/state` flips to `offline` through the bridge's
+  last will and `healthcheck.sh` fails on it. Nothing else notices: it reads no
+  other namespace and writes only its own plus its discovery configs. Note the
+  asymmetry with every other service here — this one owns a **radio**, so while
+  it is down there is no fallback path to those devices at all. The coordinator
+  is a single USB stick with a single driver process, by design (D-014).
+- **The ZB-GW04 stick unplugged** — the container will not start: the
+  `devices:` mapping names it by `/dev/serial/by-id/`, and Compose refuses a
+  missing device rather than starting a bridge with no radio. That is the right
+  failure — loud, at start, instead of a bridge that runs and finds nothing.
 - **rtl_433 down** — by design, nothing notices. It is an optional profile and
   no core path depends on it.
 

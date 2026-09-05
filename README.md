@@ -34,6 +34,7 @@ devices the IP address.
 |---|---|---|
 | 1883 | Mosquitto (MQTT) | LAN only, enforced in the `DOCKER-USER` iptables chain. **Never** port-forwarded |
 | 8123 | Home Assistant | LAN, via the existing ufw rule |
+| 8099 | Zigbee2MQTT web UI | LAN. Pairing and OTA only, and unauthenticated — never forward it |
 | 9001 | *(reserved)* MQTT over websockets | off — commented out in `mosquitto.conf` |
 
 Already in use on doctor by other projects, left alone: 22, 443, 3000, 3001,
@@ -49,7 +50,7 @@ the existing projects.
 ```sh
 cd /home/sergey/iot-stack
 
-docker compose up -d                    # mosquitto + home assistant + weather-engine
+docker compose up -d                    # mosquitto + home assistant + weather-engine + zigbee2mqtt
 docker compose ps
 docker compose logs -f
 
@@ -58,12 +59,19 @@ docker compose restart homeassistant    # or just one service
 docker compose exec mosquitto kill -HUP 1   # reload ACL/passwords, no downtime
 ```
 
-`docker compose up -d` starts all three services: the broker, Home Assistant and
-`weather-engine`. The engine joined the default stack on 2026-08-20, when it
-stopped being a stub — it now derives `feels_like`, `frost_risk`, `ice_risk` and
-`data_quality`. Nothing in the measurement path depends on it: it reads
-`weather/#` and writes `weather_state/#`, so if it dies you lose derived values
-and no measurements.
+`docker compose up -d` starts all four services: the broker, Home Assistant,
+`weather-engine` and `zigbee2mqtt`. The engine joined the default stack on
+2026-08-20, when it stopped being a stub — it now derives `feels_like`,
+`frost_risk`, `ice_risk` and `data_quality`. Nothing in the measurement path
+depends on it: it reads `weather/#` and writes `weather_state/#`, so if it dies
+you lose derived values and no measurements.
+
+`zigbee2mqtt` joined on 2026-09-05 and owns the Zigbee coordinator — a ZB-GW04
+stick reflashed to EmberZNet 8.0.3. Pairing and OTA happen in its own web UI at
+<http://192.168.1.51:8099>; paired devices arrive in Home Assistant by
+themselves over MQTT Discovery. Unlike the others it is bound to a piece of
+hardware: with the stick unplugged the container refuses to start rather than
+running blind. Reasoning in `DECISIONS.md` D-014.
 
 One service is genuinely optional and stays off:
 
@@ -100,7 +108,7 @@ the ids their discovery config gave them. Why this needs a script at all is in
 `ARCHITECTURE.md`.
 
 **After a reboot everything comes back by itself:** `docker.service` is enabled,
-all three containers are `restart: unless-stopped`, and the firewall rule is
+all four containers are `restart: unless-stopped`, and the firewall rule is
 reinstated by `iot-stack-firewall.service`.
 
 A container you stop by hand stays stopped across a reboot — that is what
@@ -143,6 +151,7 @@ grep WATCH /home/sergey/iot-stack/.env      # e.g. the read-only watch account
 | `meshcore` | MeshCore telemetry |
 | `rtl433` | optional SDR bridge |
 | `monitor` | healthchecks only |
+| `zigbee2mqtt` | the Zigbee bridge — writes `zigbee2mqtt/#` + discovery |
 
 Full permission table in `MQTT.md` §11.
 
@@ -170,8 +179,9 @@ connection. Rarely what you want.
 
 ## Adding a publisher
 
-`SENSORS.md` covers all five cases; case 5 — a self-built Wi-Fi sensor under
-`own/<sensor_id>/…` — is the common one now. The short version for a device
+`SENSORS.md` covers all six cases; case 5 — a self-built Wi-Fi sensor under
+`own/<sensor_id>/…` — is the common one now, and case 6 (a Zigbee device) is the
+one that needs no configuration here at all. The short version for a device
 filling the weather-station role: connect as `weather_collector`, set a Last Will on
 `weather/outdoor/status`, publish bare values **retained** on
 `weather/outdoor/<metric>`, and publish `weather/outdoor/last_update` with the
@@ -206,7 +216,7 @@ different account is actually allowed to see — useful for verifying an ACL.
 ./scripts/sim-rf-collector.sh discovery 42A7 "Garden 433"
 ./scripts/sim-rf-collector.sh publish 42A7
 
-./scripts/healthcheck.sh                         # broker, HA, disk, loops, round-trip
+./scripts/healthcheck.sh                         # broker, HA, disk, loops, round-trip, engine, zigbee
 ```
 
 ---
@@ -316,6 +326,8 @@ iot-stack/
 │       ├── automations.yaml
 │       └── scripts.yaml
 ├── weather-engine/          # derived values: feels_like, frost/ice risk, data quality
+├── zigbee2mqtt/
+│   └── data/                # network key, coordinator DB, secret.yaml — gitignored
 ├── rtl_433/                 # optional SDR bridge config
 ├── firewall/                # DOCKER-USER LAN-only rule + systemd unit
 └── scripts/                 # secrets, users, first-run bootstrap, entity ids,

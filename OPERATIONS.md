@@ -9,8 +9,8 @@ you are in that directory.
 
 ```sh
 docker compose ps                       # what is up
-./scripts/healthcheck.sh                # broker, HA, disk, restarts, round-trip
-docker compose logs -f --tail 50        # follow both containers
+./scripts/healthcheck.sh                # broker, HA, disk, restarts, round-trip, engine, zigbee
+docker compose logs -f --tail 50        # follow every container
 ```
 
 `healthcheck.sh` is the one to trust: it does a real publish → broker →
@@ -26,14 +26,15 @@ same logs live.
 ```sh
 docker compose up -d                    # bring the stack up
 docker compose restart homeassistant    # one service
-docker compose restart                  # both
+docker compose restart                  # all of them
 docker compose down                     # stop and remove containers (volumes stay)
 
 docker compose exec mosquitto kill -HUP 1   # reload ACL/passwords, no downtime
 ```
 
-`docker compose up -d` brings up all three services: Mosquitto, Home Assistant
-and the weather engine. One optional profile is off unless asked for:
+`docker compose up -d` brings up all four services: Mosquitto, Home Assistant,
+the weather engine and the Zigbee bridge. One optional profile is off unless
+asked for:
 
 ```sh
 docker compose --profile rtl433 up -d      # needs an SDR dongle
@@ -54,6 +55,25 @@ docker compose start homeassistant      # takes it back
 
 Or disable just the integration: **Settings → Devices & Services → MeshCore →
 Disable**. Details in `DECISIONS.md` D-001.
+
+### Pairing a Zigbee device
+
+Pairing happens in Zigbee2MQTT's own web UI at <http://192.168.1.51:8099>, not
+in Home Assistant — the bridge owns the radio (`DECISIONS.md` D-014). Devices
+arrive in Home Assistant by themselves a few seconds later, over MQTT Discovery.
+
+1. **Permit join → on**, in the UI or via
+   `switch.zigbee2mqtt_bridge_permit_join`. Turn it back off when you are done:
+   an open network accepts anything in range.
+2. Put the device into pairing mode — usually a long press, sometimes a power
+   cycle. Physical, always.
+3. **Rename it immediately.** The friendly name *is* the MQTT topic and the
+   entity id, so renaming later moves the topic and breaks every automation and
+   dashboard card that used it. `MQTT.md` §6b.
+
+Unplugging the coordinator stops the container from starting at all — the
+`devices:` mapping names the stick by `/dev/serial/by-id/`. That is deliberate:
+a bridge with no radio should fail loudly, not run and find nothing.
 
 ---
 

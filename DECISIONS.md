@@ -648,3 +648,105 @@ so removing the key restores the old behaviour exactly; `meta` gained
 `expected_inputs` and `expected_missing` and lost `core_missing`, which nothing
 outside the engine consumed. Not reversible for free: broker accounts already
 created, which is `scripts/add-mqtt-user.sh` in reverse.
+
+---
+
+## D-014 — Zigbee arrives as a separate bridge over MQTT, not as ZHA inside Home Assistant.
+
+*2026-09-05, documented and audited 2026-09-06*
+
+**DECISION.** The Zigbee coordinator — a ZB-GW04 stick reflashed to EmberZNet
+8.0.3 (EZSP v16) — is owned by a `zigbee2mqtt` container, which publishes device
+state to `zigbee2mqtt/#` and announces devices to Home Assistant through MQTT
+Discovery. Home Assistant gets a read grant on that namespace and three narrow
+write grants for command topics. It does not touch the radio.
+
+**EVIDENCE.**
+
+The stack's system of record is the broker, not Home Assistant (`ARCHITECTURE.md`).
+ZHA would have put the Zigbee network *inside* the consumer: device state would
+live in Home Assistant's own store, and the ESP32-S3 watches, `weather-engine`
+and any future subscriber — all of which speak only MQTT — would be unable to
+see a Zigbee reading at all without Home Assistant re-publishing it. That is the
+same data-direction argument that decided `mqtt:` over ESPHome's native API for
+the owner's own sensors (`WEATHER-STATION-CHOICE.md`), and SDR over a vendor
+gateway (D-005). It is not a new principle, it is the third application of one.
+
+Operationally the split also survives the restart that ZHA does not: with the
+bridge outside Home Assistant, an HA restart or a rebuilt container costs
+nothing on the Zigbee side — the network stays up, devices keep reporting into
+retained topics, and HA catches up from them. Under ZHA the radio goes down with
+the container.
+
+Verified on the live stack, 2026-09-06:
+
+| Check | Result |
+|---|---|
+| Coordinator | `EmberZNet 8.0.3 [GA]`, EZSP 16, build 581, network up |
+| Bridge → broker | connected, `zigbee2mqtt/bridge/state` = `{"state":"online"}` |
+| Discovery | seven bridge entities announced into `homeassistant/…/config` |
+| Devices paired | **0** — the network is empty so far |
+| `homeassistant` → `zigbee2mqtt/probe/set` | `RC:135` **not authorized** — defect, see below |
+| `homeassistant` → `monitor/aclprobe` (control) | `RC:16` accepted |
+
+**The ACL as first written made Home Assistant read-only over Zigbee**, which
+would have been discovered by the first person to pair a lamp and find that it
+appears correctly and does nothing. Every discovery config Zigbee2MQTT publishes
+names a command topic — `zigbee2mqtt/<device>/set` for devices,
+`zigbee2mqtt/bridge/request/…` for the bridge's own permit-join, restart and
+log-level entities — and a read grant does not cover any of them. This is the
+`sensors/+/cmd/#` defect repeating exactly (`MQTT.md` §11), and it was found the
+same way: publishing with `-V 5 -d` and reading the reason code, because under
+MQTT 3.1.1 the broker would have acknowledged the publish and silently dropped
+it. Fixed with three narrow rules rather than `readwrite zigbee2mqtt/#`, so
+Home Assistant may command a device and still may not fabricate its state.
+
+The fix was verified functionally before being proposed, against a throwaway
+`eclipse-mosquitto:2.0.22` loaded with this repository's actual `acl.conf` — so
+the production broker was never used as the test rig. Publishes under MQTT 5,
+reads judged by **delivery** rather than by SUBACK, for the reason in
+`MQTT.md` §11:
+
+| As | Action | Result |
+|---|---|---|
+| `homeassistant` | publish `zigbee2mqtt/kitchen_lamp/set` | `RC:16` accepted |
+| `homeassistant` | publish `zigbee2mqtt/kitchen_lamp/set/state` | `RC:16` accepted |
+| `homeassistant` | publish `zigbee2mqtt/bridge/request/permit_join` | `RC:16` accepted |
+| `homeassistant` | publish `zigbee2mqtt/kitchen_lamp` (device state) | `RC:135` **denied** |
+| `homeassistant` | publish `zigbee2mqtt/bridge/state` | `RC:135` **denied** |
+| `zigbee2mqtt` | publish `zigbee2mqtt/kitchen_lamp` | `RC:16` accepted |
+| `homeassistant` | subscribe `zigbee2mqtt/kitchen_lamp` | receives |
+| `monitor` | subscribe `zigbee2mqtt/bridge/state` | receives |
+| `monitor` | subscribe `zigbee2mqtt/kitchen_lamp` | receives nothing |
+
+The last two rows are the point of granting `monitor` one topic instead of the
+tree: `healthcheck.sh` can see whether the bridge is alive and still cannot see
+a single device.
+
+**ALTERNATIVES.**
+
+- **ZHA** — one fewer container and one fewer moving part, and it is the option
+  the Home Assistant documentation reaches for first. Rejected on data
+  direction, above. It is also the harder of the two to leave: ZHA keeps the
+  network in HA's storage, so migrating away later means re-pairing.
+- **A cloud Zigbee hub** (Tuya, Aqara, SmartThings) — rejected on the same
+  grounds as the built-in `tuya` integration in `TODO.md` X10: it puts the
+  internet on the path of a light switch.
+- **`readwrite zigbee2mqtt/#` for Home Assistant** — one line instead of three,
+  and it would have fixed the command defect just as well. Rejected because it
+  also lets Home Assistant write device *state*, which would make a second
+  writer of a namespace the bridge owns and break the rule the rest of this file
+  is built on.
+
+**WHY.** The coordinator is a radio, and this stack has one rule about radios:
+exactly one process owns each (D-001, D-011). Zigbee2MQTT is that process. What
+it publishes is a measurement like any other — it lands on the bus, retained,
+and Home Assistant is one subscriber among the possible several.
+
+**REVERSIBILITY.** Moderate, and asymmetric. Removing the bridge is easy: stop
+the container, delete the ACL block, and nothing else in the stack refers to it.
+Switching to ZHA is not — the paired devices would have to be re-paired one by
+one, because the network key and device table live in `zigbee2mqtt/data/` in a
+format ZHA does not read. Decide before pairing devices, not after. Today the
+network is empty, so the cost of changing course is still zero; that will stop
+being true with the first paired device.

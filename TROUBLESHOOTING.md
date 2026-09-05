@@ -173,6 +173,42 @@ Nothing there → add `topic write sensors/+/cmd/#` to the `user homeassistant`
 block, then `docker compose exec mosquitto kill -HUP 1`. This was missing from
 the first deployment; see `MQTT.md` §11.
 
+### A Zigbee device appears in Home Assistant but does not respond
+
+The lamp, switch or valve shows the right state, and toggling it in Home
+Assistant does nothing — no error, no log line. Same cause as the RF case
+above, one namespace over: Zigbee2MQTT owns `zigbee2mqtt/`, and every discovery
+config it publishes names a command topic that Home Assistant must be allowed
+to write. The bridge's own **Permit join**, **Restart** and **Log level**
+entities fail the same way, since their command topics are under
+`zigbee2mqtt/bridge/request/`.
+
+```sh
+grep -n 'zigbee2mqtt' mosquitto/config/acl.conf
+```
+
+The `user homeassistant` block needs all four lines, not just the read:
+
+```
+topic read  zigbee2mqtt/#
+topic write zigbee2mqtt/+/set
+topic write zigbee2mqtt/+/set/#
+topic write zigbee2mqtt/bridge/request/#
+```
+
+then `docker compose exec mosquitto kill -HUP 1`. To see the denial rather than
+infer it, publish as `homeassistant` under MQTT 5 — `RC:135` is the answer a
+read-only account gets, and MQTT 3.1.1 would have shown `RC:0`:
+
+```sh
+mosquitto_pub -h 127.0.0.1 -u homeassistant -P "$HA_MQTT_PASSWORD" \
+  -V 5 -d -q 1 -t zigbee2mqtt/some_device/set -m '{}'
+```
+
+Do **not** widen this to `readwrite zigbee2mqtt/#`. That also lets Home
+Assistant write device state, which makes a second writer of a namespace the
+bridge owns. `DECISIONS.md` D-014.
+
 ### Entity ids are long, like `sensor.outdoor_weather_station_outdoor_temperature`
 
 That is what Home Assistant builds from the device name plus the entity name,
