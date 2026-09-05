@@ -416,7 +416,70 @@ happened. Four paths exercised:
 
 Not applied: the file lives outside this repository, on doctor, and it is the
 rung that cuts mains to a running server — applying it is the owner's call, not
-something to do from here in passing. The tested function is ready to drop in.
+something to do from here in passing. It is kept here in full rather than in a
+scratch file, because a tested patch that only exists in a session transcript
+is a patch that has to be written twice. Replace `tapo_power_reset()` in
+`/home/sergey/scripts/mc-healthcheck.sh` with everything below, and check that
+`TAPO_API`, `log` and `send_alert` are still named that way in the surrounding
+script before doing so.
+
+```bash
+# ─── Tapo hard reset ──────────────────────────────────────────────────────────
+# The last rung of the ladder: it cuts mains to a running server. Three things
+# were wrong here and all three only bite at the worst possible moment.
+#
+#   1. `on` was one-shot and its result was thrown away. On 2026-08-12 `off`
+#      returned 200 and `on` returned 500 (ConnectionRefused to the plug), so
+#      the machine was left unpowered by a routine whose whole job was to
+#      restart it. Nobody was told.
+#   2. `off` was unchecked too, so a failed cut still logged "hard power reset"
+#      and still slept as though it had happened.
+#   3. The log said "waiting 90s for boot" and the code slept 20.
+#
+# Now: every call is checked by HTTP status, `on` is retried with backoff, and a
+# machine left dark raises the loudest alert this script has. Returns non-zero
+# if the power cycle did not complete, so callers can stop pretending it did.
+
+TAPO_RETRIES="${TAPO_RETRIES:-5}"
+TAPO_BOOT_WAIT="${TAPO_BOOT_WAIT:-90}"
+
+# tapo_call <on|off> -> 0 if the plug answered 2xx
+tapo_call() {
+    local action="$1" code
+    code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
+           -X POST "${TAPO_API}/${action}" 2>/dev/null)
+    [ "${code:0:1}" = "2" ] || { log "TAPO: /${action} returned HTTP '${code:-no-response}'"; return 1; }
+    return 0
+}
+
+tapo_power_reset() {
+    log "ACTION: Tapo hard power reset — OFF → 5s → ON"
+
+    if ! tapo_call off; then
+        send_alert "⚠️ Tapo: не удалось выключить розетку. Жёсткий сброс НЕ выполнен, питание не трогали."
+        return 1
+    fi
+    sleep 5
+
+    # Restoring power is the half that must not fail silently. Backoff 5s, 10s,
+    # 20s, 40s, 80s -- roughly 2.5 minutes of trying before giving up, which is
+    # far better than one attempt and a dark machine.
+    local delay=5 i
+    for (( i = 1; i <= TAPO_RETRIES; i++ )); do
+        if tapo_call on; then
+            [ "$i" -gt 1 ] && log "TAPO: power restored on attempt $i"
+            log "ACTION: waiting ${TAPO_BOOT_WAIT}s for the machine to boot..."
+            sleep "$TAPO_BOOT_WAIT"
+            return 0
+        fi
+        [ "$i" -lt "$TAPO_RETRIES" ] && { log "TAPO: /on failed (attempt $i/$TAPO_RETRIES), retrying in ${delay}s"; sleep "$delay"; delay=$(( delay * 2 )); }
+    done
+
+    send_alert "🚨 СЕРВЕР ОБЕСТОЧЕН. Питание снято, включить обратно не удалось (попыток: ${TAPO_RETRIES}). Нужны руки: розетка в приложении Tapo или физически."
+    log "FATAL: power was cut and could not be restored after ${TAPO_RETRIES} attempts"
+    return 1
+}
+```
 
 **Still outstanding from the original entry, and unchanged:** the Telegram bot
 token and chat id are still hardcoded in plaintext at the top of that script
