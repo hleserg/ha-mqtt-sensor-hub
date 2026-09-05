@@ -16,8 +16,15 @@
 #    4. `discovery: false` — the entities are declared in
 #       packages/weather_outdoor.yaml and already exist.
 #
-#  NOT YET FLASHED, but `esphome config` passes on 2026.8.2. Treat the first
-#  flash as the test and work the checklist at the bottom of
+#  NOT YET FLASHED, but it does compile — `esphome compile` on 2026.8.2 /
+#  ESP-IDF 5.5 builds a firmware.bin clean, no warnings from this file. That
+#  matters more than `esphome config` passing: the validator never looks inside
+#  a lambda, and all three of the awkward ones here (ESPHOME_VERSION,
+#  wifi::global_wifi_component->wifi_rssi(), the four-argument publish()) are
+#  now known to resolve rather than assumed to. Flash 55.9% of 1.8 MB, RAM
+#  33.3% — room for the BME280 block and then some.
+#
+#  Treat the first flash as the test and work the checklist at the bottom of
 #  own-sensor-reference.yaml — it applies here almost verbatim, with
 #  `own/${sensor_id}` read as `weather/outdoor`.
 # =============================================================================
