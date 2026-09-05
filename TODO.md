@@ -688,6 +688,37 @@ an evening of "the lamp is in Home Assistant but the switch does nothing".
 
 1. **Apply the ACL fix on doctor** — pull and HUP, above. Do this before
    pairing anything, or the first device will reproduce the bug.
+
+   **The pull is not clean, and the reason is worth knowing before typing it.**
+   `4304409` was committed on doctor and never pushed — `git cat-file -t
+   4304409` in this repository says *Not a valid object name*, so it exists on
+   exactly one machine. `origin/main` was at `a7788f8` until this branch landed
+   and knew nothing about it. So doctor's history and origin's have diverged
+   and `git pull` there will want to merge.
+
+   It is safe to throw doctor's commit away, because its *content* is already
+   here. Compared file by file:
+
+   | File in `4304409` | Against this repository |
+   |---|---|
+   | `docker-compose.yml` | byte-identical, empty diff |
+   | `.gitignore` | differs only by the added `esphome/secrets.yaml` |
+   | `mosquitto/config/acl.conf` | differs only by the four rules of the ACL fix |
+
+   Every line of it is a subset. So on doctor:
+
+   ```sh
+   cd /home/sergey/iot-stack
+   git status --short          # look first: anything uncommitted is NOT covered above
+   git fetch origin
+   git reset --hard origin/main
+   docker compose exec mosquitto kill -HUP 1
+   ```
+
+   `reset --hard` discards uncommitted work as well as the commit, which is why
+   `git status` comes first and is not optional. The four
+   `*.bak-20260905-211643` files are untracked and survive it — they still want
+   deleting by hand.
 2. **Pair the actual devices.** Owner's part, and hands-on by nature: each
    device has to be put into pairing mode physically. Permit-join is off and
    should be turned on only for the minute it takes, from the web UI.
