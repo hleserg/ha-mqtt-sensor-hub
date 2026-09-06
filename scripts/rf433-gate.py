@@ -229,7 +229,7 @@ def publish(batch):
 USAGE_WINDOW = 7 * 24 * 3600
 
 
-def usage_update(prev, hit, now, tx):
+def usage_update(prev, hit, now, tx, presses=1, codes_seen=None):
     u"""Досчитать статистику прибора после очередного кадра.
 
     Всё, что HA потом показывает, считается здесь, а не шаблоном в HA. Причина
@@ -242,7 +242,7 @@ def usage_update(prev, hit, now, tx):
     if len(hours) != 24:
         hours = [0] * 24
     seen = [t for t in (u.get('seen') or []) if isinstance(t, str)]
-    seen.append(now)
+    seen.extend([now] * max(1, int(presses)))
 
     # Окно недели режется по времени, а не по количеству: сто нажатий за час и
     # сто за неделю — это разные приборы, и обрезание по длине их сравняло бы.
@@ -250,10 +250,9 @@ def usage_update(prev, hit, now, tx):
     seen = [t for t in seen if _ts(t) >= edge][-5000:]
     day = calendar.timegm(time.gmtime()) - 24 * 3600
 
-    hours[local_hour(now)] += 1
+    hours[local_hour(now)] += max(1, int(presses))
     codes = dict(u.get('codes') or {})
-    cs = code_slug(hit) if is_control(hit) else None
-    if cs:
+    for cs in (codes_seen or ([code_slug(hit)] if is_control(hit) else [])):
         codes[cs] = int(codes.get(cs, 0)) + 1
 
     rssi = hit.get('rssi')
@@ -266,7 +265,7 @@ def usage_update(prev, hit, now, tx):
     if rssi is not None and (rmax is None or float(rssi) > float(rmax)):
         rmax = rssi
 
-    total = int(u.get('total') or 0) + 1
+    total = int(u.get('total') or 0) + max(1, int(presses))
     busiest = max(range(24), key=lambda h: hours[h]) if any(hours) else None
     out = {
         'total': total,
@@ -572,7 +571,7 @@ def states(did, hit, seen_at):
 
 # ----------------------------------------------------------------- ход ---
 
-def run(lines, dry_run=False, quiet_air=True):
+def run(lines, dry_run=False, state=None):
     u"""Разобрать поток строк rtl_433 и собрать всё, что надо опубликовать.
 
     Возвращает (пачка, счётчики). Пачку не публикует — так её можно
@@ -581,7 +580,7 @@ def run(lines, dry_run=False, quiet_air=True):
     stat = {'lines': 0, 'noise': 0, 'hits': 0, 'devices': 0,
             'announced': 0, 'enabled': 0, 'control': 0, 'bad_json': 0,
             'rolling': 0, 'sendable': 0}
-    hits = {}
+    hits, codes, caps = {}, {}, {}
     for line in lines:
         line = line.strip()
         if not line or line[0] != '{':
@@ -597,9 +596,22 @@ def run(lines, dry_run=False, quiet_air=True):
             stat['noise'] += 1
             continue
         stat['hits'] += 1
+        did = device_id(hit)
         # Последний разбор на устройство: в одном запуске датчик присылает один
         # и тот же кадр по три раза, и публиковать надо свежее, а не первое.
-        hits[device_id(hit)] = hit
+        hits[did] = hit
+        # Но схлопывать по устройству ЦЕЛИКОМ нельзя. У брелка на четыре кнопки
+        # один идентификатор и четыре кода: оставь мы только последний разбор,
+        # три нажатия из четырёх исчезли бы вместе со своими кнопками. Поэтому
+        # коды копятся отдельно от «последнего состояния».
+        tx = tx_body(hit)
+        if is_control(hit) and tx and not is_rolling(hit):
+            codes.setdefault(did, {})[code_slug(hit)] = tx
+        # Нажатие считается по capture_id, а не по числу разборов: пачка
+        # повторов лежит у ноды в ОДНОМ слоте, то есть один захват — одно
+        # нажатие, сколько бы раз rtl_433 ни узнал его внутри пачки. Нет
+        # capture_id (сухой прогон, чужой источник) — считаем разбор за захват.
+        caps.setdefault(did, set()).add(hit.get('capture_id', object()))
 
     stat['devices'] = len(hits)
 
@@ -627,7 +639,12 @@ def run(lines, dry_run=False, quiet_air=True):
     if not hits:
         return batch, stat
 
-    if dry_run:
+    # `state` подставляется только проверками: без него сухой прогон считает,
+    # что не разрешено ничего, и показывает лишь объявления. Ветку разрешённого
+    # прибора иначе не проверить без брокера, а именно в ней живут кнопки.
+    if state is not None:
+        enabled, usage_prev, txlib = state
+    elif dry_run:
         enabled, usage_prev, txlib = {}, {}, {}
     else:
         enabled, usage_prev, txlib = broker_state()
@@ -653,25 +670,27 @@ def run(lines, dry_run=False, quiet_air=True):
         # слота в 256 таймингов) поля `tx` не будет вовсе, и это правильно:
         # обрубок пачки повторов в эфире — это кнопка, которая молча не
         # работает, а такая хуже отсутствующей.
-        codes = dict(txlib.get(did) or {})
-        tx = tx_body(hit)
-        if tx and is_rolling(hit):
-            # Плавающий код повторить нельзя в принципе — счётчик живёт в
-            # брелке, а не в эфире. Кнопку не заводим и сырьё не храним.
+        # Библиотека кодов прибора = что уже лежало в брокере + что услышали
+        # в этом проходе. Плавающий код сюда не попадает вовсе: повторить его
+        # нельзя в принципе, счётчик живёт в брелке, а не в эфире.
+        fresh = codes.get(did) or {}
+        if is_rolling(hit):
             stat['rolling'] += 1
-            tx = None
-        if tx:
-            cs = code_slug(hit)
-            if codes.get(cs) != tx:
-                codes[cs] = tx
+            fresh = {}
+        library = dict(txlib.get(did) or {})
+        for cs, body in sorted(fresh.items()):
+            if library.get(cs) != body:
                 batch.append(('sensors/%s/%s/tx/%s' % (COLLECTOR, did, cs),
-                              json.dumps(tx, ensure_ascii=False), 1))
-            stat['sendable'] += 1
+                              json.dumps(body, ensure_ascii=False), 1))
+            library[cs] = body
+        stat['sendable'] += len(fresh)
 
-        usage = usage_update(usage_prev.get(did), hit, now, tx)
+        usage = usage_update(usage_prev.get(did), hit, now,
+                             bool(library), presses=len(caps.get(did) or [1]),
+                             codes_seen=sorted(fresh) or None)
         batch.append(('sensors/%s/%s/usage' % (COLLECTOR, did),
                       json.dumps(usage, ensure_ascii=False), 1))
-        batch.extend(configs(did, enabled[did], hit, codes))
+        batch.extend(configs(did, enabled[did], hit, library))
         batch.extend(states(did, hit, now))
 
     return batch, stat
@@ -813,9 +832,33 @@ def self_test():
                         '2026-09-07T15:00:00Z', None)
     assert roll['rolling'] is True and roll['sendable'] is False, roll
 
+    # Брелок на две кнопки в одном проходе: обе должны выжить. Схлопывание по
+    # устройству целиком теряло все нажатия кроме последнего вместе с их
+    # кнопками — это была настоящая ошибка, найденная на живом брокере.
+    fob = [json.dumps({'model': 'GateTxTest', 'id': 777, 'code': c,
+                       'capture_id': n, 'rssi': -63,
+                       'tx': {'frequency': 433920000, 'raw': [300, -300, 300]}})
+           for n, c in enumerate(['aa', 'bb', 'aa'])]
+    allow = ({'gatetxtest_777': u'Чужой брелок'}, {}, {})
+    fb, fstat = run(fob, dry_run=True, state=allow)
+    assert fstat['sendable'] == 2, u'две разные кнопки, а не одна: %r' % fstat
+    txt = sorted(t for t, _, _ in fb if '/tx/' in t)
+    assert txt == ['sensors/rf433/gatetxtest_777/tx/aa',
+                   'sensors/rf433/gatetxtest_777/tx/bb'], txt
+    # Три захвата — три нажатия; повторы внутри одного захвата им не считаются.
+    same, sstat = run([fob[0], fob[0], fob[0]], dry_run=True, state=allow)
+    assert sstat['sendable'] == 1, sstat
+
+    u3 = usage_update(None, json.loads(fob[0]), '2026-09-07T15:00:00Z', True,
+                      presses=3, codes_seen=['aa', 'bb'])
+    assert u3['total'] == 3 and u3['n24'] == 3, u3
+    assert u3['codes'] == {'aa': 1, 'bb': 1}, u3
+    assert sum(u3['hours']) == 3, u3['hours']
+
     print(u'self-test: ок — 2 разбора, 1 шум, 2 объявления, 0 сущностей без '
           u'разрешения, пустой проход отмечен, в чужой status не пишем, '
-          u'кнопка только у статического целого кадра')
+          u'кнопка только у статического целого кадра, '
+          u'брелок на две кнопки даёт две')
 
 
 def main():
