@@ -22,6 +22,14 @@
 # чаще раза в минуту объявлять одно устройство — при десятиминутном шаге это
 # соблюдается самим расписанием, без файла состояния.
 #
+# `--out` задан явно, потому что по умолчанию инструмент пишет разборы в
+# /tmp/rtl433-node/decodes.jsonl — то есть находки, ради которых всё и
+# затевалось, умирают при первой же перезагрузке доктора. Сам файл разборов
+# растёт медленно (за всё время наблюдения он нулевой), но терять его нельзя.
+# Промежуточный /tmp/rf433-hits.jsonl остаётся в /tmp сознательно: это буфер
+# одного прохода, он переписывается каждые десять минут и пережить ничего не
+# должен.
+#
 # Оба скрипта зовутся через `python3` явно. `tools/rtl433.py` в соседнем
 # репозитории лежит без бита исполнения, и прямой вызов упал бы на правах —
 # диагноз «нет прав» вместо «нет флагов» увёл бы отладку в сторону.
@@ -36,4 +44,4 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 # отвечает) выглядит для ворот как пустой вход: они честно отметят проход, и
 # `last_run` окажется свежим на порванной трубе. С `&&` свежая отметка значит
 # «отработали обе половины», а это и есть то, что она должна значить.
-*/10 * * * * sergey flock -n /tmp/rf433.lock -c 'python3 /home/sergey/remote_ir_rf/tools/rtl433.py --once --ack --json > /tmp/rf433-hits.jsonl && python3 /home/sergey/iot-stack/scripts/rf433-gate.py < /tmp/rf433-hits.jsonl' >> /home/sergey/iot-stack-rf433.log 2>&1
+*/10 * * * * sergey flock -n /tmp/rf433.lock -c 'python3 /home/sergey/remote_ir_rf/tools/rtl433.py --once --ack --json --out /home/sergey/rf433-decodes.jsonl > /tmp/rf433-hits.jsonl && python3 /home/sergey/iot-stack/scripts/rf433-gate.py < /tmp/rf433-hits.jsonl' >> /home/sergey/iot-stack-rf433.log 2>&1

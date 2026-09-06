@@ -229,6 +229,38 @@ def publish(batch):
 USAGE_WINDOW = 7 * 24 * 3600
 
 
+def new_caps(prev, ids):
+    u"""Сколько из этих захватов ещё не посчитано прошлыми проходами.
+
+    Номер захвата у ноды монотонно растёт, поэтому помнить достаточно один
+    максимум, а не весь список номеров.
+
+    Отсев нужен не для аккуратности, а потому что повторный забор одних и тех
+    же кадров — штатное поведение, а не сбой. Инструмент ноды пишет разборы на
+    диск и только потом подтверждает их; падение между этими двумя шагами
+    оставляет кадры неподтверждёнными, и следующий проход заберёт их снова.
+    Без отсева каждое такое падение дописывало бы прибору лишние нажатия, и
+    «сколько раз им пользовались» тихо врало бы вверх.
+
+    Возвращает (сколько новых, новый максимум). Ноль новых — значит проход
+    принёс только уже учтённое, и статистику трогать нельзя вовсе.
+    """
+    nums = sorted(i for i in ids
+                  if isinstance(i, int) and not isinstance(i, bool))
+    if not nums:
+        # Номеров нет — старая нода или обрезанный ответ. Считаем как считали:
+        # лучше посчитать дважды, чем не посчитать вовсе.
+        return len(list(ids)), (prev or {}).get('max_cap')
+    top = (prev or {}).get('max_cap')
+    if not isinstance(top, int) or nums[-1] < top:
+        # Либо считаем впервые, либо счётчик ноды обнулился после перезагрузки
+        # и номера пошли заново. Во втором случае старый максимум выбросил бы
+        # весь новый эфир — поэтому его сбрасываем, а не сравниваем с ним.
+        top = None
+    fresh = [i for i in nums if top is None or i > top]
+    return len(fresh), nums[-1]
+
+
 def usage_update(prev, hit, now, tx, presses=1, codes_seen=None):
     u"""Досчитать статистику прибора после очередного кадра.
 
@@ -701,11 +733,14 @@ def run(lines, dry_run=False, state=None):
             library[cs] = body
         stat['sendable'] += len(fresh)
 
-        usage = usage_update(usage_prev.get(did), hit, now,
-                             bool(library), presses=len(caps.get(did) or [1]),
-                             codes_seen=sorted(fresh) or None)
-        batch.append(('sensors/%s/%s/usage' % (COLLECTOR, did),
-                      json.dumps(usage, ensure_ascii=False), 1))
+        presses, top = new_caps(usage_prev.get(did), caps.get(did) or [])
+        if presses:
+            usage = usage_update(usage_prev.get(did), hit, now,
+                                 bool(library), presses=presses,
+                                 codes_seen=sorted(fresh) or None)
+            usage['max_cap'] = top
+            batch.append(('sensors/%s/%s/usage' % (COLLECTOR, did),
+                          json.dumps(usage, ensure_ascii=False), 1))
         batch.extend(configs(did, enabled[did], hit, library))
         batch.extend(states(did, hit, now))
 
@@ -830,6 +865,18 @@ def self_test():
     # Без библиотеки кодов кнопок нет вовсе.
     plain = dict((t, 1) for t, _, _ in configs('x', 'X', whole))
     assert not any('/button/' in t for t in plain), plain
+
+    # Повторный забор тех же кадров не должен прибавлять нажатий: инструмент
+    # ноды подтверждает кадры ПОСЛЕ записи на диск, и падение между этими
+    # шагами штатно приводит к их повторной выдаче следующим проходом.
+    assert new_caps(None, [7, 8, 9]) == (3, 9)
+    assert new_caps({'max_cap': 9}, [7, 8, 9]) == (0, 9), u'посчитали дважды'
+    assert new_caps({'max_cap': 8}, [7, 8, 9, 10]) == (2, 10)
+    # Перезагрузка ноды обнуляет счётчик; старый максимум выбросил бы весь
+    # новый эфир, поэтому он сбрасывается, а не сравнивается.
+    assert new_caps({'max_cap': 27168}, [1, 2]) == (2, 2), u'потеряли после ребута'
+    # Без номеров считаем как считали: лучше дважды, чем никогда.
+    assert new_caps({'max_cap': 5}, [object(), object()])[0] == 2
 
     # Статистика: считается здесь, а не шаблоном в HA.
     u1 = usage_update(None, whole, '2026-09-07T15:00:00Z', body)
