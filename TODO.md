@@ -857,73 +857,65 @@ namespace is reserved (`radio/raw/meshcore/…`) and the ACL rule exists. Not
 enabled, because a packet stream from a 168-node mesh with no consumer is just
 disk and CPU.
 
-### L3 · RF collector ingestion `[!]`
-*Depends on: the rebuilt Tuya IR/RF device at 192.168.1.48.* The contract is
-written (`SENSORS.md` §2, allow-list flow), the simulator proves the whole path,
-and the ACL is in place. Passive reception of unencrypted broadcasts only.
+### L3 · RF collector ingestion `[~]`
+*Depends on: the rebuilt Tuya IR/RF device at 192.168.1.48.* Contract in
+`SENSORS.md` §2, allow-list flow, ACL in place. Passive reception of
+unencrypted broadcasts only.
 
-The node's own agent has published a hardware audit and is building a sensor
-collector on it. Coordination — including the answered questions (a)–(d) — is in
-`/home/hleserg/remote_ir_rf/docs/coordination-with-host.md`. What that audit
-settles, and what nothing in this repo can change: **the node has no FSK**, so
-Fine Offset/Ecowitt, Bresser and LaCrosse are permanently out of its reach. It
-hears OOK — the cheap 433 MHz thermo-hygrometer population — on 315, 433.92 and
-868 MHz, one frequency at a time.
+**The host half is built and measured.** `scripts/rf433-gate.py` — the §2 gate:
+one line of rtl_433 JSON in, an allow-listed Home Assistant entity out.
+Verified against the live broker 2026-09-06, both branches: an un-enabled
+device produced one non-retained announcement and nothing else; after the
+retained enable, five discovery configs, retained per-metric state, a
+non-retained `event`, and eight entities in Home Assistant. Cleaned up after
+itself; the registry is empty again. Details and the two ACL/naming surprises
+are in `SENSORS.md` §2.
 
-**It has been publishing since 2026-09-05, to `radio/raw/rf433/frame` — not to
-`sensors/#`.** Checked 2026-09-06 against the node's own HTTP API rather than
-against the bus, because the bus shows almost nothing and the reason is not
-that the node is idle:
+**The band defect is found and fixed — by the node's agent, not by aiming
+better.** What looked like a dead band was the node's own crystal: `26 MHz × 15
+= 390.000000` exactly, and 390 was the only frequency in the scan list sitting
+on a whole harmonic. The separating measurement is the convincing part —
+scanning off, parked on one frequency, 180 s each: **390.00 → 38 frames,
+433.92 → 0, 315.00 → 0.** So it was not the AGC reopening the gate after each
+`retune_rx` hop; had it been, dropping 390 would merely have moved the flood
+onto 433.92. `RF_SCAN_HZ` is now `{315, 433.92}`, OTA 2026-09-06 ~11:45 MSK.
+868.35 dropped (OOK receiver, that band is nearly all FSK), 915 dropped (tract
+dead by sweep). Expected take is now single frames a day, not thousands.
 
-| `GET /mqtt` → `raw` | |
-|---|---|
-| `published` | **4** |
-| `skipped_noise` | 4952 |
-| `skipped_offline` | 4 |
+**`rssi_gate: -110` stays** — the owner's decision, reaffirmed the same day.
+The −85 comparison is moot: the source of the flood was the frequency, not the
+gate.
 
-| `GET /rf` → `journal` | |
-|---|---|
-| `sequence` | 27014 receptions in 29 h of uptime |
-| `stored` / `slots` | 8192 / 8192 — full |
-| `unacked` | 5003 never collected |
-| `overwritten` | 4946 already lost to wraparound |
+What the node's audit settles and nothing here can change: **no FSK**, so Fine
+Offset/Ecowitt, Bresser and LaCrosse are permanently out of reach. It hears OOK
+— the cheap 433 MHz thermo-hygrometer population — one frequency at a time.
 
-**What it is receiving is noise, and `GET /rf/captured?format=text` says so in
-five independent ways.** Every record: `390.00M` — not one on 433.92; `x1` —
-received once, where a real OOK transmitter repeats a frame three to eight times
-per burst; `te=263..315` — pulse width jittering ±20%, where a real one is
-stable; `rssi −94..−97` against an `rssi_gate` of −110, i.e. sitting on the
-noise floor; and `unknown ?b` / `canon_len: 0` / `trunc` — nothing decoded, cut
-off at the 256-timing capture limit. The `burst=4952..4959` counter runs in step
-with `skipped_noise`, which is the same events counted twice.
+Remaining, and it is the node agent's half: `tools/rtl433.py --once --ack
+--json`. Fetch, decode, persist, **then** ack; a crash re-delivers rather than
+loses. No batch endpoint exists and it is no longer urgent — it was a cure for
+300 frames a pass, and those frames were the spur. `cron/iot-stack-rf433` is
+written and deliberately **not installed**: without the first half the pipe is
+empty.
 
-So the pipeline is built and works; it is aimed at nothing. Three settings, all
-in the node's firmware and none of them ours to change:
+### L3b · rtl_433 over the node's pulse data `[~]`
+*Depends on: L3, and on nothing else — no dongle needed.* Decode is rtl_433's,
+not ours (D-005). Two corrections to how this was planned, both measured on the
+node rather than reasoned:
 
-| Setting | Cost |
-|---|---|
-| `frequency: 390000000` | listening to a dead band; the sensors are at 433.92 |
-| `scan_enabled: true`, `scan_dwell_ms: 500`, five bands | ~10% of the time on 433.92, so a sensor transmitting once a minute is mostly missed |
-| `rssi_gate: -110` | below the noise floor, which is why 4952 of 4956 events were noise |
+- **`.cu8` IQ, not `?format=ook`.** Synthesised IQ is portable across rtl_433
+  builds; `pulse_data` text is not.
+- **rtl_433's native MQTT output does not work on file input.** With `-r` it
+  prints `Publishing MQTT data to …` and publishes nothing: the broker sees the
+  TCP connection open and closed with no CONNECT, because mongoose's event loop
+  never turns on a file read. Verified on 25.12 across 40 files and via stdin,
+  holding the process alive for eleven seconds. So D-005 still holds for a real
+  SDR (L4) and cannot hold here.
 
-Park it on 433.92, stop the scan, raise the gate to about −85, then look again
-after a day. Until that happens there is nothing here for L3b to decode and
-nothing for L5 to normalize — and the `[!]` above is about the aim, not the
-build. **This is for the node's agent, not for this repository.**
-
-### L3b · rtl_433 over the node's pulse data `[ ]`
-*Depends on: L3, and on nothing else — no dongle needed.* The node's
-`?format=ook` output is genuine rtl_433 `pulse_data`. A small host service that
-polls it, runs `rtl_433 -r` and lets rtl_433's **native** MQTT output publish the
-decode gives decoded third-party sensors with hardware already on the shelf, and
-costs zero broker changes — `rtl_433/#`, the `rtl433` account and the HA read
-grant all exist. Agreed with the node agent as the decode path (D-005 again: the
-decoder is not ours to write).
-
-Non-negotiable condition, recorded when this was agreed: **no entity is created
-from `rtl_433/#` except by explicit allow-listing.** The gate in `SENSORS.md` §2
-is what stops an open 433 MHz band becoming hundreds of rows, and moving decode
-to the host must not quietly bypass it.
+That removes the reason to publish into `rtl_433/#` at all, which is just as
+well: L3b's own non-negotiable condition was that no entity may be created
+without explicit allow-listing, and `rtl_433/#` had no gate. `rf433-gate.py`
+publishes into `sensors/rf433/…` through the §2 allow-list instead — the
+condition is now structural rather than a promise.
 
 ### L4 · rtl_433 with a real SDR `[!]`
 *Depends on: an SDR dongle — now optional rather than planned.* Config exists and

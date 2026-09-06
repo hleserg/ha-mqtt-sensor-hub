@@ -132,6 +132,67 @@ cd /home/sergey/iot-stack
 `scripts/sim-rf-collector.sh` is also the reference implementation: everything
 the real firmware must do is in there, and nowhere else.
 
+### The real collector
+
+Two halves, one pipe, and the split is deliberate — the node is ears, rtl_433 is
+the brain, the gate is the passport office:
+
+```sh
+tools/rtl433.py --once --ack --json | scripts/rf433-gate.py
+```
+
+The first half lives in `~/remote_ir_rf` (the node's own repo): it pulls the
+node's journal over HTTP one capture at a time with 0.15 s between requests,
+synthesises `.cu8` IQ, runs it through rtl_433 in Docker, and acknowledges the
+capture **after** it is on disk, never before. A crash then re-delivers the
+frame instead of losing it. `scripts/rf433-gate.py` is the second half and the
+subject of this section.
+
+**The noise filter is that rtl_433 gave the decode a name.** A line without
+`model` is not a signal, it is an edge coincidence. Neither `canon_len` nor
+RSSI nor burst length gets a vote: at the node's −110 dBm gate they produce
+false positives, and that is measured on the node rather than assumed.
+
+**The gate keeps no state of its own.** The allow-list *is* the retained
+`sensors/rf433/cmd/enable/#` messages, re-read at the start of every run. Not a
+saving — a requirement: a cron job that loses its state file must not resurrect
+entities the owner never enabled.
+
+The device id carries the channel, not just the model and id — `Nexus-TH` id 42
+on channel 3 becomes `nexus_th_42_3`. Three channels on a weather station are
+three sensors in three places, and merging them into one would average a
+balcony with a fridge.
+
+**Third-party is marked in three fields at once**, because different Home
+Assistant screens show different ones: `manufacturer: third-party`, the model
+string carries the band, and `via_device: rf_ble_collector`.
+
+A decode with no measurement at all but with `code`/`button`/`cmd` is a remote,
+not a sensor, and becomes an **`event` entity** — the standard Home Assistant
+automation trigger, so someone else's doorbell can switch on my light. There is
+no transmit path: TODO L3 says passive reception only.
+
+Checking it needs neither broker nor node:
+
+```sh
+./scripts/rf433-gate.py --self-test    # weather sensor, remote, and noise
+./scripts/rf433-gate.py --dry-run < hits.jsonl
+```
+
+Verified end to end against the live broker on 2026-09-06: an un-enabled device
+produced one non-retained announcement and nothing else; after the retained
+enable it produced five discovery configs, retained per-metric state and a
+non-retained `event`, and Home Assistant created all eight entities.
+
+Two things that measurement taught, both worth knowing before the next one:
+
+- **`rf_collector` may write `homeassistant/#` but not read it.** Subscribing as
+  the collector to check your own discovery configs returns silence that looks
+  exactly like "nothing was published". Read them as `homeassistant`.
+- **Home Assistant names the entity after the alias, not after `object_id`.**
+  Alias `Проверка ворот` gave `sensor.proverka_vorot_temperature`. The alias the
+  owner types on the dashboard is the entity id, transliterated.
+
 ### Removing one
 
 **Disable this device** on the dashboard clears the retained enable command.

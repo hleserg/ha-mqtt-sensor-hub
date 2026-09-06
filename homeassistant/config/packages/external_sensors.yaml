@@ -44,6 +44,20 @@ mqtt:
         manufacturer: "hleserg"
         model: "Tuya IR/RF remote (repurposed)"
 
+    # Когда ворота последний раз добирали журнал ноды. Нужен потому, что
+    # `status` у cron-задачи врёт по построению: она публикует retained
+    # `online` и завершается, так что умерший сборщик остаётся «в сети»
+    # навсегда. Отметка времени — единственное, что об этом скажет; настоящую
+    # же защиту даёт `expire_after: 3600` на самих значениях, они пропадут
+    # через час независимо от того, что написано в `status`.
+    - name: "RF Collector Last Run"
+      unique_id: rf_collector_last_run
+      state_topic: "sensors/+/last_run"
+      device_class: timestamp
+      icon: mdi:clock-check-outline
+      entity_category: diagnostic
+      device: *rf_collector_device
+
     - name: "RF Collector Status"
       unique_id: rf_collector_status
       state_topic: "sensors/+/status"
