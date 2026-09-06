@@ -876,6 +876,40 @@ node's own `docs/api-rf.md`: **rolling codes cannot be replayed at all**
 was told before the first button was built), and **the node cannot receive
 while transmitting**, so a replay can never be re-heard as a neighbour's press.
 
+**The receiver stands on 433.92 and no longer sweeps.** The owner's decision,
+2026-09-07, in his words: *«встать на 433.92 совсем»*. He chose it after being
+shown the arithmetic: the node hopped between 315 MHz and 433.92 every 500 ms,
+so it heard the band that matters half the time, while its own `docs/api-rf.md`
+admits *«одиночный короткий пакет между окнами можно пропустить»* — and a
+doorbell press is 200–500 ms. Nothing had ever arrived on 315 MHz. The sweep is
+therefore not a diagnostic aid we gave up; it was costing half of every single
+press for a band that has never carried anything.
+
+Applied at runtime through `POST /rf/listen`, which parks the sniffer and
+disables the sweep in one call. That setting lives in the node's RAM only, so
+the cron re-asserts it every ten minutes: after a node reboot the firmware
+default would restore the sweep **silently**, with nothing in any log to say
+the collector had gone half-deaf. The permanent value is `node_endpoint.rf_scan`
+in the node's YAML and belongs to the node agent; when it lands there, drop the
+curl from `cron/iot-stack-rf433`. The re-assert also drags a manual retune back
+within ten minutes — correct under this decision, and the node agent has been
+told so it is not mistaken for a fault.
+
+`rssi_gate: -110` was deliberately left untouched by the same call. It is a
+separate standing decision of the owner's and is not ours to bundle into this
+one.
+
+**Two standing rules from 2026-09-07 that outlive this task.** The owner, on
+finding that `--ack` cleared the node's journal including frames nothing had
+decoded: *«чистить надо только то что мы забрали/разобрали и т.д. Чистить
+данные которые мы не смотрели толком не надо блин, терять данные я не просил
+точно»* — so acknowledging a frame is a claim that it is safely on our disk,
+and a compact fingerprint was offered and explicitly rejected: the frame is
+kept whole. And on the node's duty cycle: *«это основной режим ноды должен быть
+- слушать. Прерываться надо только на передачу по моецй команде с флиппера или
+с HA»* — listening is the default state, transmission the exception, and
+anything that takes the receiver off the air needs his say-so.
+
 **The host half is built and measured.** `scripts/rf433-gate.py` — the §2 gate:
 one line of rtl_433 JSON in, an allow-listed Home Assistant entity out.
 Verified against the live broker 2026-09-06, both branches: an un-enabled
