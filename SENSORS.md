@@ -153,6 +153,19 @@ subject of this section.
 RSSI nor burst length gets a vote: at the node's −110 dBm gate they produce
 false positives, and that is measured on the node rather than assumed.
 
+**An empty pass is a result, and it is published as one.** The node's own
+measurement on 2026-09-06 (an interrupt counter taken ahead of every filter,
+because an empty journal and a dead receiver look identical from outside):
+~1020 edges per second on both 315 and 433.92 MHz, noise floor −100…−105 dBm.
+That floor sits above the node's −110 dBm gate, so the gate is permanently
+open, the stream never pauses, and the overflow watchdog discards the buffer
+whole — 45 times in 150 s. A real burst leaves pauses and passes the same
+watchdog. So the normal state of this pipeline is *nothing decoded*, and
+`status`/`last_run` are therefore stamped **before** the empty-input return,
+never after it. Otherwise `sensor.rf_collector_last_run` would read "nine
+hours ago" on a perfectly healthy collector — exactly the reading it exists to
+make impossible.
+
 **The gate keeps no state of its own.** The allow-list *is* the retained
 `sensors/rf433/cmd/enable/#` messages, re-read at the start of every run. Not a
 saving — a requirement: a cron job that loses its state file must not resurrect
@@ -182,7 +195,12 @@ Checking it needs neither broker nor node:
 Verified end to end against the live broker on 2026-09-06: an un-enabled device
 produced one non-retained announcement and nothing else; after the retained
 enable it produced five discovery configs, retained per-metric state and a
-non-retained `event`, and Home Assistant created all eight entities.
+non-retained `event`, and Home Assistant created all eight entities. Values
+land, not just entities — a second pass with alias `Gate Value Check` put
+21.75, 48 and −72 into `sensor.gate_value_check_{temperature,humidity,rssi}`,
+read back out of the recorder, and an empty pass right after it moved
+`sensors/rf433/last_run` from 09:06:05Z to 09:06:53Z. Every test topic was
+cleared afterwards.
 
 Two things that measurement taught, both worth knowing before the next one:
 
