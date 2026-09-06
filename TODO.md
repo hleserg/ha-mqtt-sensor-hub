@@ -762,8 +762,8 @@ Zigbee2MQTT over ZHA is cheap to reverse *today* and expensive after the first
 device is paired, because the network key and device table live in a format ZHA
 does not read. D-014.
 
-### X12 · The MeshCore Companion over USB is not visible on doctor `[ ]` — needs the owner, hands on the hardware
-*Raised 2026-09-06. Next session: 2026-09-07.* The owner reports the T114 USB
+### X12 · MeshCore is pointed at a host that no longer exists `[~]` — the rest needs the owner
+*Raised 2026-09-06, diagnosed the same day.* The owner reports the T114 USB
 companion is plugged in and the job is done. Doctor disagrees, and the
 disagreement is what has to be resolved before anything downstream is believed:
 
@@ -774,9 +774,43 @@ disagreement is what has to be resolved before anything downstream is believed:
 | MeshCore integration `devices:` | `null` |
 | `meshcore/044e2d/status` | `offline`, retained, unchanged since 2026-08-26 |
 
-Nothing here proves the board is faulty — it proves doctor cannot see it. The
-owner's own two hypotheses are the first two to test, in this order, because
-both are cheap and both are common:
+**Answered 2026-09-06, and the answer was in neither hypothesis.** Home
+Assistant is not looking at USB at all. From `.storage/core.config_entries`:
+
+```
+title: MeshCore Node ✌️Beta Serega
+connection_type: tcp     tcp_host: 192.168.1.93     tcp_port: 5000
+```
+
+The integration was set up against a Companion over the network, and that host
+is gone — `ping 192.168.1.93` is 100% loss, `/dev/tcp/…/5000` answers *No route
+to host*, and Home Assistant says so every eight seconds:
+
+```
+custom_components.meshcore.meshcore_api: Error connecting to MeshCore device:
+  [Errno 113] Connect call failed ('192.168.1.93', 5000)
+```
+
+That single fact explains every row of the table above. `devices: null` is
+simply what a TCP entry looks like. The absent `ttyACM*` was never relevant.
+And `meshcore/044e2d/status` has been `offline` since 2026-08-26 because that is
+when the network Companion stopped answering.
+
+**So there are two separate jobs, and doing only the first fixes nothing.**
+
+*First, the physical half — still the owner's, still unresolved.* Doctor has one
+USB device and it is the Zigbee stick:
+
+```
+$ lsusb
+Bus 001 Device 003: ID 1a86:7523 QinHeng Electronics CH340 serial converter
+$ ls /dev/serial/by-id/
+usb-1a86_USB_Serial-if00-port0 -> ../../ttyUSB0
+```
+
+No T114 is enumerated on this machine, and `dmesg` shows no USB events at all.
+Both original hypotheses remain live and are still the cheapest things to test,
+in this order:
 
 1. **It is in a different machine.** Easiest to settle: look at which box the
    cable actually runs to.
@@ -787,14 +821,22 @@ both are cheap and both are common:
 
 Only if both are excluded does it become a firmware or driver question.
 
-**Why this waits for the owner:** every step is physical — reading a label,
-following a cable, swapping one. Nothing about it can be established from a
-shell, which is why guessing further from here would only produce confident
-fiction.
+*Second, the integration half — which is not physical and is the reason the
+first one alone would have looked like a failure.* The existing entry is TCP and
+cannot be edited into a serial one; MeshCore's config flow picks the transport
+at creation. Delete the entry and add it again choosing USB/serial once the
+board enumerates. Doing this before the board appears is pointless, which is why
+it is second and not first.
+
+**Why the physical half waits for the owner:** every step is reading a label,
+following a cable, swapping one. None of it can be established from a shell.
 
 Blocks: `MESHCORE.md` §"Planned: moving to the T114 over USB" and the
-`ARCHITECTURE.md` diagram both still describe the pre-USB arrangement. Neither
-gets rewritten until the true state is known.
+`ARCHITECTURE.md` diagram both still describe the pre-USB arrangement. The
+diagram is now known to be wrong in a specific way — it shows a Companion that
+has not answered since August — but the shape of the replacement depends on
+whether the T114 ends up on USB or another Companion returns to the network, so
+neither is rewritten yet.
 
 ---
 
