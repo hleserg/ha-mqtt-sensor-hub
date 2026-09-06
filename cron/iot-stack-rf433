@@ -22,4 +22,8 @@
 MAILTO=""
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-*/10 * * * * sergey flock -n /tmp/rf433.lock -c '/home/sergey/remote_ir_rf/tools/rtl433.py --once --ack --json | /home/sergey/iot-stack/scripts/rf433-gate.py' >> /home/sergey/iot-stack-rf433.log 2>&1
+# Через файл и `&&`, а не трубой. В трубе падение первой половины (нода не
+# отвечает) выглядит для ворот как пустой вход: они честно отметят проход, и
+# `last_run` окажется свежим на порванной трубе. С `&&` свежая отметка значит
+# «отработали обе половины», а это и есть то, что она должна значить.
+*/10 * * * * sergey flock -n /tmp/rf433.lock -c '/home/sergey/remote_ir_rf/tools/rtl433.py --once --ack --json > /tmp/rf433-hits.jsonl && /home/sergey/iot-stack/scripts/rf433-gate.py < /tmp/rf433-hits.jsonl' >> /home/sergey/iot-stack-rf433.log 2>&1
