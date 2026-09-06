@@ -677,19 +677,30 @@ control topic. This is the `sensors/+/cmd/#` bug from the first deployment
 repeating exactly, and the reason it hides is the same: under MQTT 3.1.1 the
 broker acknowledges a denied publish and drops it silently. Fixed with three
 narrow rules, plus a single-topic read grant for `monitor` so `healthcheck.sh`
-can see the bridge's last will. **The fix is in this repository and is not yet
-on the broker** — applying it is `git pull` on doctor and
-`docker compose exec mosquitto kill -HUP 1`, no downtime.
+can see the bridge's last will. **Applied on doctor 2026-09-06 and verified by
+measurement, not by reading the file** — five publishes under MQTT 5:
+
+| Account → topic | Result |
+|---|---|
+| `homeassistant` → `zigbee2mqtt/probe/set` | `RC:0` — accepted *and delivered*, so the bridge is subscribed |
+| `homeassistant` → `zigbee2mqtt/bridge/request/permit_join` | `RC:0` |
+| `homeassistant` → `zigbee2mqtt/probe` (device state) | `RC:135` — still refused, which is the point |
+| `monitor` → `zigbee2mqtt/bridge/request/#` | `RC:135` |
+| `monitor` subscribes `zigbee2mqtt/bridge/state` | `{"state":"online"}` |
+
+The bridge logged `Entity 'probe' is unknown` and `Invalid payload` for those
+two probes. Both are the expected complaint about a made-up device and an empty
+payload, and both are better evidence than the reason codes alone: they prove
+the publish reached the bridge rather than merely satisfying the broker.
 
 It cost nothing in the field because the network is empty. It would have cost
 an evening of "the lamp is in Home Assistant but the switch does nothing".
 
 **What is left, in order:**
 
-1. **Apply the ACL fix on doctor** — pull and HUP, above. Do this before
-   pairing anything, or the first device will reproduce the bug.
+1. ~~**Apply the ACL fix on doctor**~~ — done 2026-09-06, table above.
 
-   **The pull is not clean, and the reason is worth knowing before typing it.**
+   **The pull was not clean, and the reason is worth keeping.**
    `4304409` was committed on doctor and never pushed — `git cat-file -t
    4304409` in this repository says *Not a valid object name*, so it exists on
    exactly one machine. `origin/main` was at `a7788f8` until this branch landed
@@ -705,20 +716,36 @@ an evening of "the lamp is in Home Assistant but the switch does nothing".
    | `.gitignore` | differs only by the added `esphome/secrets.yaml` |
    | `mosquitto/config/acl.conf` | differs only by the four rules of the ACL fix |
 
-   Every line of it is a subset. So on doctor:
+   Every line of it was a subset, so discarding doctor's commit lost nothing.
+
+   **`reset --hard` would have been the wrong tool, and not for the obvious
+   reason.** It compares the *index* against the target, not the working file —
+   so it would have rewritten `acl.conf` through a rename, replacing the inode
+   and silently detaching the container's view of a per-file bind mount. And
+   the usual check does not catch it: the content is identical either way, so
+   host and container `md5sum` still agree while the mount is already dead.
+   **Compare the inode, not the sum.** What was actually done:
 
    ```sh
    cd /home/sergey/iot-stack
-   git status --short          # look first: anything uncommitted is NOT covered above
+   git status --short        # clean but for four *.bak — nothing to lose
    git fetch origin
-   git reset --hard origin/main
-   docker compose exec mosquitto kill -HUP 1
+   # write acl.conf in place FIRST: truncating keeps the inode, and afterwards
+   # the file already matches the target, so git has no reason to touch it
+   git show origin/main:mosquitto/config/acl.conf \
+     | sudo sh -c 'cat > mosquitto/config/acl.conf'
+   git reset --mixed origin/main   # moves HEAD and index, leaves the worktree
+   git checkout -- .               # writes only files that still differ
    ```
 
-   `reset --hard` discards uncommitted work as well as the commit, which is why
-   `git status` comes first and is not optional. The four
-   `*.bak-20260905-211643` files are untracked and survive it — they still want
-   deleting by hand.
+   Verified after: inode `49169836` before and after, unchanged, and equal to
+   the container's; owner and mode still `1883:sergey 0640`; all three per-file
+   mounts (`acl.conf`, `mosquitto.conf`, `passwd`) matching inside and out.
+   Then `kill -HUP 1`, which reloads without dropping a connection.
+
+   The four `*.bak-20260905-211643` files are untracked and survived it. Safe
+   to delete: the other three are tracked, so their old content is in git, and
+   `.env.bak` holds no key absent from the live `.env`.
 2. **Pair the actual devices.** Owner's part, and hands-on by nature: each
    device has to be put into pairing mode physically. Permit-join is off and
    should be turned on only for the minute it takes, from the web UI.
