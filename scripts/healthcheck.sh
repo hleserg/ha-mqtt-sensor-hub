@@ -83,8 +83,14 @@ for c in iot-mosquitto iot-homeassistant iot-weather-engine iot-zigbee2mqtt; do
     fail "$c is not running"
   elif [ "$restarts" -gt 3 ] && [ "$age" -lt 600 ]; then
     fail "$c looks like a restart loop: $restarts restarts, up only ${age}s"
-  elif [ "$restarts" -gt 0 ]; then
-    warn "$c running (${age}s), but has restarted $restarts time(s)"
+  elif [ "$restarts" -gt 0 ] && [ "$age" -lt 86400 ]; then
+    # Restarts only, and only while they are recent. RestartCount never resets
+    # until the container is recreated, so warning on it unconditionally means
+    # one bad afternoon leaves a yellow line in every run for months -- and a
+    # permanent warning is one nobody reads. A live loop is already caught
+    # above by the count-and-uptime rule; this catches the milder case of a
+    # container that fell over today and came back.
+    warn "$c running (${age}s), but has restarted $restarts time(s) in the last day"
   else
     ok "$c running (${age}s, $restarts restarts)"
   fi

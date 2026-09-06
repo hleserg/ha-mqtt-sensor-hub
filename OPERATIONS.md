@@ -82,7 +82,7 @@ a bridge with no radio should fail loudly, not run and find nothing.
 | What changed | What to do |
 |---|---|
 | `mosquitto/config/acl.conf` or `passwd` | `docker compose exec mosquitto kill -HUP 1` |
-| `mosquitto/config/mosquitto.conf` | `docker compose restart mosquitto` |
+| `mosquitto/config/mosquitto.conf` | `docker compose restart mosquitto` — see the note below, it bounces Zigbee2MQTT too |
 | `homeassistant/config/**` YAML | `docker compose restart homeassistant` |
 | A new YAML entity in `packages/` | restart HA, then `./scripts/normalize-entity-ids.sh` |
 | `weather-engine/config.yaml` | `docker compose restart weather-engine` |
@@ -101,6 +101,19 @@ ssh sergey@192.168.1.51 'cd /home/sergey/iot-stack &&
   sudo chown 1883:1000 mosquitto/config/acl.conf &&
   sudo chmod 0640 mosquitto/config/acl.conf &&
   docker compose exec -T mosquitto kill -HUP 1'
+```
+
+**Restarting the broker takes the Zigbee bridge down with it.** Zigbee2MQTT
+exits rather than waits when MQTT is unreachable, and `restart: unless-stopped`
+then brings it back — so a broker restart costs the bridge a minute of
+restart-looping, and any Zigbee command sent in that window is lost. `kill -HUP
+1` does not do this, which is one more reason to prefer it: it reloads the ACL
+and the passwords without dropping a single connection. This is not
+hypothetical — it is where the bridge's 49 restarts came from, all of them
+during the afternoon it was first deployed:
+
+```
+z2m: MQTT failed to connect, exiting... (getaddrinfo ENOTFOUND mosquitto)
 ```
 
 **`cat > file`, not `cp`.** `acl.conf`, `mosquitto.conf` and `passwd` are
