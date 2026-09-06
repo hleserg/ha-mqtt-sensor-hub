@@ -9,10 +9,18 @@
 #    ./scripts/test-weather-publisher.sh            # publish one sample
 #    ./scripts/test-weather-publisher.sh --loop 30  # keep publishing every 30 s
 #    ./scripts/test-weather-publisher.sh --offline  # mark the station offline
+#    ./scripts/test-weather-publisher.sh --clear    # remove every retained value
 #
 #  Retained is the important part: a watch or a dashboard that connects a week
 #  from now gets the last known values immediately, without waiting for the
 #  next transmission.
+#
+#  It is also the part that outlives the simulation, which is what `--clear` is
+#  for. Values left behind do not merely look stale -- the weather engine reads
+#  them as real inputs, so a station that only measures temperature inherits a
+#  wind speed from whenever this script last ran and derives wind chill from it
+#  forever. `--offline` does not help: it flips availability and leaves every
+#  value in place. Clear before a real node takes over the topics.
 # =============================================================================
 set -euo pipefail
 
@@ -29,27 +37,58 @@ SENSOR_ID="${SENSOR_ID:-outdoor-sim-01}"
 
 LOOP=0
 OFFLINE=0
+CLEAR=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --loop)    LOOP="${2:?--loop needs seconds}"; shift 2 ;;
     --offline) OFFLINE=1; shift ;;
-    -h|--help) sed -n '2,18p' "$0"; exit 0 ;;
+    --clear)   CLEAR=1; shift ;;
+    -h|--help) sed -n '2,24p' "$0"; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
 done
 
 # One container, many publishes: far faster than a container per message.
 pub_batch() {
-  # stdin: lines of "<topic> <payload>"
+  # stdin: lines of "<topic> <payload>". A line carrying only a topic publishes
+  # a zero-length retained message, which is how MQTT deletes a retained value
+  # -- there is no other way to take one back.
   docker run --rm -i --network host \
     -e H="$HOST" -e P="$PORT" -e U="$USER_NAME" -e W="$PASSWORD" \
     "$IMAGE" sh -c '
       while IFS=" " read -r topic payload; do
         [ -z "$topic" ] && continue
-        mosquitto_pub -h "$H" -p "$P" -u "$U" -P "$W" \
-          -t "$topic" -m "$payload" -q 1 -r
+        if [ -z "$payload" ]; then
+          mosquitto_pub -h "$H" -p "$P" -u "$U" -P "$W" \
+            -t "$topic" -n -q 1 -r
+        else
+          mosquitto_pub -h "$H" -p "$P" -u "$U" -P "$W" \
+            -t "$topic" -m "$payload" -q 1 -r
+        fi
       done
     '
+}
+
+publish_clear() {
+  # Ask the broker what is actually retained rather than clearing a hardcoded
+  # list. The list would drift from publish_sample below, and it would miss
+  # anything an older version of this script -- or a different publisher --
+  # left behind.
+  local topics
+  topics=$(docker run --rm --network host \
+    -e H="$HOST" -e P="$PORT" -e U="$USER_NAME" -e W="$PASSWORD" \
+    "$IMAGE" sh -c '
+      mosquitto_sub -h "$H" -p "$P" -u "$U" -P "$W" \
+        -t "weather/outdoor/#" --retained-only -W 3 -F "%t"' || true)
+
+  if [ -z "$topics" ]; then
+    echo "nothing retained under weather/outdoor/ — already clean"
+    return 0
+  fi
+
+  printf '%s\n' "$topics" | pub_batch
+  echo "cleared $(printf '%s\n' "$topics" | wc -l | tr -d ' ') retained topic(s):"
+  printf '%s\n' "$topics" | sed 's/^/  /'
 }
 
 publish_offline() {
@@ -105,6 +144,11 @@ EOF
   echo "$(date +%H:%M:%S)  t=${t}C  h=${h}%  p=${p}hPa  dew=${dew}C  wind=${wind}m/s  rain=${rain_total}mm"
 }
 
+if [ "$CLEAR" -eq 1 ]; then
+  publish_clear
+  exit 0
+fi
+
 if [ "$OFFLINE" -eq 1 ]; then
   publish_offline
   exit 0
@@ -112,7 +156,7 @@ fi
 
 if [ "$LOOP" -gt 0 ]; then
   echo "publishing every ${LOOP}s to $HOST:$PORT as $USER_NAME — Ctrl-C to stop"
-  trap 'echo; echo "stopped (station left online and retained)"; exit 0' INT TERM
+  trap 'echo; echo "stopped — station left online and every value retained."; echo "Run with --clear before a real node takes over these topics."; exit 0' INT TERM
   while true; do
     publish_sample
     sleep "$LOOP"
