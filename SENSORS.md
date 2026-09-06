@@ -117,6 +117,22 @@ retained, under `homeassistant/…`. Entities appear within a second or two.
 `sensors/rf433/42A7/<metric>` and non-retained raw packets to
 `sensors/rf433/42A7/event`.
 
+**The gate does not own `sensors/rf433/#` alone.** The node's own firmware uses
+the same prefix for its own entities — today that is a retained
+`sensors/rf433/binary_sensor/node_button/state`, published by ESPHome, which
+returns on the node's next connect if you delete it. It is not a decoded device
+and does not fit the contract above, which is exactly right: it is the node's
+own hardware, not something the node heard. Nothing collides — a rtl_433 model
+slug is never `binary_sensor` — but a `sensors/rf433/#` dump shows both, so
+know which is which before hunting a bug.
+
+That button is worth one more line, because mislabelling it would be dangerous
+in both directions. It is the local rescue control for someone standing at the
+node with no network working: **short press switches WiFi networks, long press
+reboots. There is no factory reset.** If the entity ever lands in Home
+Assistant, it must not be labelled "reset" — either the owner is afraid to
+press it, or they press it expecting a wipe that never comes.
+
 ### Try the whole flow without hardware
 
 ```sh
