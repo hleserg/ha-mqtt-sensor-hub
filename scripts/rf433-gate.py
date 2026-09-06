@@ -325,13 +325,20 @@ def run(lines, dry_run=False, quiet_air=True):
         hits[device_id(hit)] = hit
 
     stat['devices'] = len(hits)
-    if not hits:
-        return [], stat
 
-    enabled = {} if dry_run else allowlist()
+    # Отметка о проходе ставится ДО проверки на пустоту, и это не мелочь.
+    # После выброса 390 МГц пустой эфир — нормальный случай, единицы кадров в
+    # сутки; выйди мы отсюда молча, `last_run` на исправной трубе показывал бы
+    # «девять часов назад», то есть ровно то, ради обнаружения чего заведён.
+    # Пустой эфир — результат, и на шине это должно быть видно так же, как в
+    # счётчиках.
     now = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
     batch = [('sensors/%s/status' % COLLECTOR, 'online', 1),
              ('sensors/%s/last_run' % COLLECTOR, now, 1)]
+    if not hits:
+        return batch, stat
+
+    enabled = {} if dry_run else allowlist()
 
     for did, hit in sorted(hits.items()):
         hit.setdefault('device_id', did)
@@ -417,7 +424,14 @@ def self_test():
     assert not any('/rssi' in t for t, _, _ in
                    states('x', {'model': 'M', 'temperature_C': 1}, 'T'))
 
-    print(u'self-test: ок — 2 разбора, 1 шум, 2 объявления, 0 сущностей без разрешения')
+    # Пустой вход — не «ничего не делать», а «отчитаться, что проход был».
+    empty, estat = run([], dry_run=True)
+    assert [t for t, _, _ in empty] == ['sensors/rf433/status',
+                                        'sensors/rf433/last_run'], empty
+    assert estat['hits'] == 0 and estat['devices'] == 0, estat
+
+    print(u'self-test: ок — 2 разбора, 1 шум, 2 объявления, 0 сущностей без '
+          u'разрешения, пустой проход отмечен')
 
 
 def main():
