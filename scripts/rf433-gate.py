@@ -332,9 +332,21 @@ def run(lines, dry_run=False, quiet_air=True):
     # «девять часов назад», то есть ровно то, ради обнаружения чего заведён.
     # Пустой эфир — результат, и на шине это должно быть видно так же, как в
     # счётчиках.
+    #
+    # `sensors/rf433/status` тут намеренно НЕ публикуется, хотя раньше
+    # публиковался. Этот топик принадлежит прошивке ноды: ESPHome ставит на
+    # него birth/will, то есть `offline` туда пишет САМ БРОКЕР, когда нода
+    # перестала отвечать. Ворота, ставящие retained `online` раз в 10 минут,
+    # затирали бы эту посмертную отметку — сдохшая нода выглядела бы живой.
+    # Ровно та же ошибка, что и с отметкой о проходе, только опаснее: там
+    # живое выглядело мёртвым, здесь мёртвое выглядит живым.
+    #
+    # `availability_topic` в конфигурациях по-прежнему указывает на него, и это
+    # правильно: нет ноды — нет приёма, и чужим датчикам нечего показывать.
+    # Смерть самих ворот при живой ноде ловится другим — `expire_after` на
+    # значениях и вот этой отметкой.
     now = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
-    batch = [('sensors/%s/status' % COLLECTOR, 'online', 1),
-             ('sensors/%s/last_run' % COLLECTOR, now, 1)]
+    batch = [('sensors/%s/last_run' % COLLECTOR, now, 1)]
     if not hits:
         return batch, stat
 
@@ -426,12 +438,18 @@ def self_test():
 
     # Пустой вход — не «ничего не делать», а «отчитаться, что проход был».
     empty, estat = run([], dry_run=True)
-    assert [t for t, _, _ in empty] == ['sensors/rf433/status',
-                                        'sensors/rf433/last_run'], empty
+    assert [t for t, _, _ in empty] == ['sensors/rf433/last_run'], empty
     assert estat['hits'] == 0 and estat['devices'] == 0, estat
 
+    # Сторож против возврата уже сделанной ошибки: `sensors/rf433/status` —
+    # birth/will прошивки ноды, `offline` туда пишет брокер. Любая наша запись
+    # в него затирает посмертную отметку и показывает сдохшую ноду живой.
+    full, _ = run(sample, dry_run=True)
+    for t, _, _ in list(full) + list(empty):
+        assert not t.endswith('/status'), u'ворота пишут в чужой status: ' + t
+
     print(u'self-test: ок — 2 разбора, 1 шум, 2 объявления, 0 сущностей без '
-          u'разрешения, пустой проход отмечен')
+          u'разрешения, пустой проход отмечен, в чужой status не пишем')
 
 
 def main():
