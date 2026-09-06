@@ -526,7 +526,12 @@ def tx_configs(cfg, did, codes):
     """
     for cs, body in sorted(codes.items()):
         cfg('button', 'send_%s' % cs, {
-            'name': (u'Отправить' if len(codes) == 1 else u'Отправить %s' % cs),
+            # Код в имени всегда, даже когда он пока один. Иначе первая
+            # кнопка регистрируется как «Отправить», а при появлении второй
+            # переименовывается в «Отправить aa» — и id, сделанный HA из
+            # первого имени, остаётся навсегда расходиться с именем. Замечено
+            # на живом брокере: button.…_otpravit рядом с …_otpravit_bb.
+            'name': u'Отправить %s' % cs,
             'command_topic': 'sensors/%s/cmd/send/%s/%s' % (COLLECTOR, did, cs),
             'payload_press': json.dumps(body, ensure_ascii=False),
             'retain': False, 'icon': 'mdi:remote',
