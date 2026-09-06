@@ -496,9 +496,20 @@ def usage_configs(cfg, did):
     # Состояние — час, в который прибор работает чаще всего; атрибуты — вся
     # раскладка по 24 часам, чтобы владелец видел не только пик, но и форму:
     # «каждое утро в семь» и «когда придётся» дают один и тот же пик.
+    # Атрибуты — белым списком, а не всем сообщением. В `usage` лежит `seen`:
+    # до 5000 отметок времени, и без шаблона HA писал бы весь этот массив в
+    # таблицу атрибутов базы истории при КАЖДОМ проходе, то есть раз в десять
+    # минут. На разговорчивом приборе это десятки мегабайт за окно хранения
+    # ради данных, которые нужны только воротам и только на шине.
     cfg('sensor', 'usage_profile', dict(
         u, name=u'Обычное время', value_template='{{ value_json.typical }}',
-        json_attributes_topic='%s/usage' % base, icon='mdi:clock-outline'))
+        json_attributes_topic='%s/usage' % base,
+        json_attributes_template=(
+            "{{ {'hours': value_json.hours, 'codes': value_json.codes,"
+            " 'rssi_avg': value_json.rssi_avg, 'rolling': value_json.rolling,"
+            " 'sendable': value_json.sendable,"
+            " 'first_seen': value_json.first_seen} | tojson }}"),
+        icon='mdi:clock-outline'))
 
     cfg('sensor', 'distance', dict(
         u, name=u'Насколько близко', value_template='{{ value_json.distance }}',
@@ -811,6 +822,11 @@ def self_test():
     assert json.loads(btn['payload_press']) == body, btn
     assert btn['command_topic'] == 'sensors/rf433/cmd/send/akhan_324422/a1'
     assert btn['device']['suggested_area'] == FOREIGN_AREA
+    # Атрибуты — только белым списком. `seen` — массив до 5000 отметок, и без
+    # шаблона HA писал бы его в базу истории на каждом проходе, раз в 10 минут.
+    prof = cfgs['homeassistant/sensor/rf433_akhan_324422/usage_profile/config']
+    assert 'value_json.seen' not in prof['json_attributes_template'], prof
+    assert 'value_json.hours' in prof['json_attributes_template'], prof
     # Без библиотеки кодов кнопок нет вовсе.
     plain = dict((t, 1) for t, _, _ in configs('x', 'X', whole))
     assert not any('/button/' in t for t in plain), plain
