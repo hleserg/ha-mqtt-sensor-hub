@@ -167,7 +167,10 @@ template:
         device_class: temperature
         state_class: measurement
         icon: mdi:arrow-expand-vertical
-        entity_category: diagnostic
+        # `entity_category` тут нет намеренно: у template-сенсора в YAML этой
+        # опции не существует, и она роняла ВЕСЬ раздел template этого пакета
+        # — сенсор не создавался вообще. Категорию, если понадобится, ставят
+        # руками в реестре сущностей.
         state: >
           {% set a = states('sensor.outdoor_temperature') %}
           {% set b = states('sensor.outdoor_temperature_secondary') %}
