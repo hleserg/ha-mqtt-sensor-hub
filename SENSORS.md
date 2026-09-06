@@ -210,7 +210,9 @@ string carries the band, and `via_device: rf_ble_collector`.
 A decode with no measurement at all but with `code`/`button`/`cmd` is a remote,
 not a sensor, and becomes an **`event` entity** — the standard Home Assistant
 automation trigger, so someone else's doorbell can switch on my light. There is
-no transmit path: TODO L3 says passive reception only.
+a transmit path too, as of the owner's 2026-09-07 decision — see "Sending one
+back" below. It replaced the earlier "passive reception only", which is why
+that phrase no longer appears here.
 
 Checking it needs neither broker nor node:
 
@@ -237,6 +239,83 @@ Two things that measurement taught, both worth knowing before the next one:
 - **Home Assistant names the entity after the alias, not after `object_id`.**
   Alias `Проверка ворот` gave `sensor.proverka_vorot_temperature`. The alias the
   owner types on the dashboard is the entity id, transliterated.
+
+### Sending one back
+
+The owner replaced "passive reception only" on 2026-09-07: *«хочу чтобы в HA
+была кнопка для отправки этого сигнала»*. So an allow-listed remote now also
+gets **one `button` entity per distinct code** — a four-button fob is four
+buttons, because a fob has one id and four codes.
+
+No daemon and no per-device automation. The body `POST /rf` wants rides in the
+button's own `payload_press`; pressing it publishes that body to
+`sensors/rf433/cmd/send/<device_id>/<code>`, and a single automation
+(`rf433_send_bridge`) forwards it to the node. Home Assistant already holds
+`topic write sensors/+/cmd/#`, so the ACL needed no edit. The button config is
+`retain: false` deliberately — a retained press would re-fire every entity at
+every Home Assistant restart.
+
+**The button will be missing from most devices, and that is not a fault:**
+
+- **Rolling codes cannot be replayed at all.** KeeLoq, Somfy RTS, gates, cars:
+  the counter lives in the fob, not on the air, so yesterday's recording is
+  rejected today. The gate keeps a model blocklist and emits no button; the
+  node's own `docs/api-rf.md` says the same, "математика в брелке, не в эфире".
+- **A truncated capture carries no raw data.** The node's slot holds 256
+  timings; past that the tail is lost, and transmitting the stump would put a
+  fragment of a repeat burst on the air. Roughly two in five captures are
+  truncated, measured by the node agent on 2026-09-07.
+
+`repeat` defaults to **1**, not more: `raw` already contains the whole repeat
+burst as the node heard it, so `repeat: 3` sends three bursts — nine or twelve
+presses — rather than three repeats. `RF_TX_REPEAT` overrides it for a receiver
+that genuinely needs a second burst.
+
+### What we know about a device
+
+The owner also asked what the node knows about each third-party device. Seven
+entities, all read from **one** retained topic, `sensors/rf433/<id>/usage`:
+
+| Entity | What it says |
+|---|---|
+| Сигналов всего | since the device was allow-listed |
+| Сигналов за неделю / за сутки | pruned by time, not by count |
+| Обычное время | the busiest local hour; attributes carry all 24 buckets |
+| Насколько близко | a word, not metres — see below |
+| Лучший уровень | best RSSI seen, dBm |
+| Впервые услышан | first capture after allow-listing |
+
+That topic is both the gate's memory and Home Assistant's source: one MQTT
+sensor can take its state by `value_template` and its attributes by
+`json_attributes_topic` from the same message, so the two cannot drift apart —
+they are physically one message. Counts are computed in the gate, not in a
+Home Assistant template: a template re-runs on every state change of anything,
+this runs once per pass, and "last day" on the broker's clock cannot disagree
+with "last week" on Home Assistant's.
+
+**Distance is a word on purpose.** RSSI depends on the transmitter's power, its
+antenna, walls and weather; the same sensor behind a wall and in line of sight
+differs by twenty decibels. Metres would be an invention, so the gate publishes
+the level as measured plus one of *рядом / недалеко / далеко / на пределе
+слышимости*.
+
+**Hours are local, everything else is UTC.** "Usually around six in the
+evening" is a fact about a person's day, and in Moscow the three-hour offset
+would put an evening visitor in the afternoon. The zone comes from `TZ` in
+`.env`, not from the host's settings, so the number does not depend on where
+the job ran.
+
+**This is memory, and it is still not state that can create an entity.** The
+gate keeps no file and no database; usage and the replay codes live in retained
+broker messages, next to the allow-list. Losing all of it resurrects nothing —
+the only thing that creates an entity is still the owner's retained
+`cmd/enable`. Statistics accumulate for allow-listed devices only, so a sensor
+that drove past the house once leaves nothing behind.
+
+**Grouping is done by area, not by dashboard.** Every third-party device
+carries `suggested_area: "Чужие приборы"`, so Home Assistant separates them on
+the devices page, in search and in voice assistants without a line of dashboard
+yaml per device.
 
 ### Removing one
 
