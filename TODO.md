@@ -859,8 +859,22 @@ disk and CPU.
 
 ### L3 · RF collector ingestion `[~]`
 *Depends on: the rebuilt Tuya IR/RF device at 192.168.1.48.* Contract in
-`SENSORS.md` §2, allow-list flow, ACL in place. Passive reception of
-unencrypted broadcasts only.
+`SENSORS.md` §2, allow-list flow, ACL in place.
+
+**"Passive reception only" is no longer the standing decision.** It stood here
+from the start and was quoted as the reason there is no transmit path. The
+owner replaced it on 2026-09-07, asked directly and answering directly: *«хочу
+чтобы в HA была кнопка для отправки этого сигнала»* — a Home Assistant button
+that replays a captured code into the air, next to everything the node knows
+about the device that sent it. Recorded as his decision, not as an inference
+from it. What passive-only bought — no button, no replay — is now explicitly
+not wanted, so the reasoning that rested on it is void, not merely outdated.
+
+Two limits survive the change and are hardware, not policy, both from the
+node's own `docs/api-rf.md`: **rolling codes cannot be replayed at all**
+("математика в брелке, не в эфире" — so gates and cars are out, and the owner
+was told before the first button was built), and **the node cannot receive
+while transmitting**, so a replay can never be re-heard as a neighbour's press.
 
 **The host half is built and measured.** `scripts/rf433-gate.py` — the §2 gate:
 one line of rtl_433 JSON in, an allow-listed Home Assistant entity out.
@@ -890,12 +904,23 @@ What the node's audit settles and nothing here can change: **no FSK**, so Fine
 Offset/Ecowitt, Bresser and LaCrosse are permanently out of reach. It hears OOK
 — the cheap 433 MHz thermo-hygrometer population — one frequency at a time.
 
-Remaining, and it is the node agent's half: `tools/rtl433.py --once --ack
---json`. Fetch, decode, persist, **then** ack; a crash re-delivers rather than
-loses. No batch endpoint exists and it is no longer urgent — it was a cure for
-300 frames a pass, and those frames were the spur. `cron/iot-stack-rf433` is
-written and deliberately **not installed**: without the first half the pipe is
-empty.
+**Deployed on doctor 2026-09-07** on the owner's word: `hertzg/rtl_433:latest`
+pulled (18.2 MB), `/home/sergey/remote_ir_rf` cloned over ssh (the repo is
+private; https asked for a password, doctor's key github accepts), and
+`cron/iot-stack-rf433` installed to `/etc/cron.d/`. Installed *before* the
+first half exists, deliberately: it fails on argparse, touches neither node nor
+bus, and the `&&` keeps `last_run` from moving — so the dashboard reads "not
+collecting", which is true. When the flags land, `git pull` starts it.
+
+The node agent's half is written (`d4095ed`) and, as of this writing, **not
+pushed to github**, so doctor cannot have it.
+
+The pipe's normal state is now measured, not guessed: after the 390 MHz fix the
+node takes **82 frames a day** (41 in 12.1 h), rssi −97…−89, `repeats = 1`,
+`canon_len = 0` — the same shapeless shelf as before, 170× rarer, and rtl_433
+decodes **zero** of it. So a non-empty input producing zero publications is the
+steady state, not a fault; the gate's counter says which of the three zeros it
+is (`7e38006`).
 
 ### L3b · rtl_433 over the node's pulse data `[~]`
 *Depends on: L3, and on nothing else — no dongle needed.* Decode is rtl_433's,
