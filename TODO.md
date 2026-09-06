@@ -822,11 +822,52 @@ and the ACL is in place. Passive reception of unencrypted broadcasts only.
 
 The node's own agent has published a hardware audit and is building a sensor
 collector on it. Coordination — including the answered questions (a)–(d) — is in
-`../COORDINATION-rf-node.md`. What that audit settles, and what nothing in this
-repo can change: **the node has no FSK**, so Fine Offset/Ecowitt, Bresser and
-LaCrosse are permanently out of its reach. It hears OOK — the cheap 433 MHz
-thermo-hygrometer population — on 315, 433.92 and 868 MHz, one frequency at a
-time.
+`/home/hleserg/remote_ir_rf/docs/coordination-with-host.md`. What that audit
+settles, and what nothing in this repo can change: **the node has no FSK**, so
+Fine Offset/Ecowitt, Bresser and LaCrosse are permanently out of its reach. It
+hears OOK — the cheap 433 MHz thermo-hygrometer population — on 315, 433.92 and
+868 MHz, one frequency at a time.
+
+**It has been publishing since 2026-09-05, to `radio/raw/rf433/frame` — not to
+`sensors/#`.** Checked 2026-09-06 against the node's own HTTP API rather than
+against the bus, because the bus shows almost nothing and the reason is not
+that the node is idle:
+
+| `GET /mqtt` → `raw` | |
+|---|---|
+| `published` | **4** |
+| `skipped_noise` | 4952 |
+| `skipped_offline` | 4 |
+
+| `GET /rf` → `journal` | |
+|---|---|
+| `sequence` | 27014 receptions in 29 h of uptime |
+| `stored` / `slots` | 8192 / 8192 — full |
+| `unacked` | 5003 never collected |
+| `overwritten` | 4946 already lost to wraparound |
+
+**What it is receiving is noise, and `GET /rf/captured?format=text` says so in
+five independent ways.** Every record: `390.00M` — not one on 433.92; `x1` —
+received once, where a real OOK transmitter repeats a frame three to eight times
+per burst; `te=263..315` — pulse width jittering ±20%, where a real one is
+stable; `rssi −94..−97` against an `rssi_gate` of −110, i.e. sitting on the
+noise floor; and `unknown ?b` / `canon_len: 0` / `trunc` — nothing decoded, cut
+off at the 256-timing capture limit. The `burst=4952..4959` counter runs in step
+with `skipped_noise`, which is the same events counted twice.
+
+So the pipeline is built and works; it is aimed at nothing. Three settings, all
+in the node's firmware and none of them ours to change:
+
+| Setting | Cost |
+|---|---|
+| `frequency: 390000000` | listening to a dead band; the sensors are at 433.92 |
+| `scan_enabled: true`, `scan_dwell_ms: 500`, five bands | ~10% of the time on 433.92, so a sensor transmitting once a minute is mostly missed |
+| `rssi_gate: -110` | below the noise floor, which is why 4952 of 4956 events were noise |
+
+Park it on 433.92, stop the scan, raise the gate to about −85, then look again
+after a day. Until that happens there is nothing here for L3b to decode and
+nothing for L5 to normalize — and the `[!]` above is about the aim, not the
+build. **This is for the node's agent, not for this repository.**
 
 ### L3b · rtl_433 over the node's pulse data `[ ]`
 *Depends on: L3, and on nothing else — no dongle needed.* The node's
