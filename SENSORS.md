@@ -126,6 +126,17 @@ own hardware, not something the node heard. Nothing collides — a rtl_433 model
 slug is never `binary_sensor` — but a `sensors/rf433/#` dump shows both, so
 know which is which before hunting a bug.
 
+**And `sensors/rf433/status` is the node's too, not the gate's.** ESPHome sets
+it as birth/will, which means the *broker* writes `offline` there when the node
+stops answering — a death certificate no script of ours could match. The gate
+used to publish a retained `online` on every run and would have overwritten it,
+showing a dead node as alive. It no longer publishes that topic at all, and the
+self-test fails if any topic ending in `/status` ever reappears in a batch. The
+discovery configs still point `availability_topic` at it, which is right: no
+node, no reception, nothing for a third-party sensor to show. The three deaths
+are caught by three different things — node by the broker's will, gate by
+`last_run` going stale, either by `expire_after: 3600` on the values.
+
 That button is worth one more line, because mislabelling it would be dangerous
 in both directions. It is the local rescue control for someone standing at the
 node with no network working: **short press switches WiFi networks, long press
