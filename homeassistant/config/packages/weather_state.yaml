@@ -11,6 +11,21 @@
 #  Still `unknown`:   condition, rain_risk, thunderstorm  — see the note at the
 #                     bottom of this file for what each one is waiting for.
 #
+#  Availability is decided here rather than in the engine, and deliberately so.
+#  The engine's rule is that a value it can no longer compute is left alone to
+#  age, with `computed_at` carrying its real age -- it never publishes the words
+#  `unknown` or `unavailable`, because those are Home Assistant states and not
+#  measurements. That rule is right, and it leaves a gap: a retained
+#  `feels_like` outlives the inputs it came from, and on a dashboard it looks
+#  exactly like a live reading. Found on 2026-09-06, when clearing seventeen
+#  days of simulator data left `Feels Like` showing -7.94 C and both risk
+#  entities reading `likely`, derived from measurements that no longer existed.
+#
+#  So every entity that states a weather *fact* is available only while the
+#  engine is running and `data_quality` is not `no_data`. The three diagnostics
+#  -- Data Quality, Computed At, Engine Offline -- stay visible always: they are
+#  what you look at to find out why the others went away.
+#
 #  Pressure tendency is the exception to "the engine owns derived values": it
 #  is computed here, because Home Assistant already holds the pressure history
 #  and the derivative integration does it correctly. Moving it into the engine
@@ -24,6 +39,13 @@ mqtt:
       unique_id: weather_state_condition
       state_topic: "weather_state/condition"
       icon: mdi:weather-partly-cloudy
+      availability: &derived_available
+        # Both conditions required: a derived value is current only if the
+        # engine is running *and* it had something to derive from.
+        - topic: "weather_state/engine_status"
+        - topic: "weather_state/data_quality"
+          value_template: "{{ 'offline' if value == 'no_data' else 'online' }}"
+      availability_mode: all
       device: &weather_engine_device
         identifiers: ["weather_engine"]
         name: "Weather Engine"
@@ -40,6 +62,8 @@ mqtt:
       device_class: temperature
       state_class: measurement
       suggested_display_precision: 1
+      availability: *derived_available
+      availability_mode: all
       device: *weather_engine_device
 
     - name: "Rain Risk"
@@ -49,6 +73,8 @@ mqtt:
       state_class: measurement
       icon: mdi:weather-rainy
       suggested_display_precision: 0
+      availability: *derived_available
+      availability_mode: all
       device: *weather_engine_device
 
     # ---------------------------------------------------------------------
@@ -64,12 +90,16 @@ mqtt:
       unique_id: weather_state_ice_risk
       state_topic: "weather_state/ice_risk"
       icon: mdi:snowflake-alert
+      availability: *derived_available
+      availability_mode: all
       device: *weather_engine_device
 
     - name: "Frost Risk"
       unique_id: weather_state_frost_risk
       state_topic: "weather_state/frost_risk"
       icon: mdi:snowflake
+      availability: *derived_available
+      availability_mode: all
       device: *weather_engine_device
 
     # ok / partial / degraded / no_data — describes the *inputs*, not the
@@ -102,6 +132,8 @@ mqtt:
       payload_off: "false"
       device_class: safety
       icon: mdi:weather-lightning
+      availability: *derived_available
+      availability_mode: all
       device: *weather_engine_device
 
     # Driven by the engine's MQTT last-will, so it flips to `on` when the

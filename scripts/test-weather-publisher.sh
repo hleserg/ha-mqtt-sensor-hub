@@ -79,7 +79,7 @@ publish_clear() {
     -e H="$HOST" -e P="$PORT" -e U="$USER_NAME" -e W="$PASSWORD" \
     "$IMAGE" sh -c '
       mosquitto_sub -h "$H" -p "$P" -u "$U" -P "$W" \
-        -t "weather/outdoor/#" --retained-only -W 3 -F "%t"' || true)
+        -t "weather/outdoor/#" --retained-only -W 3 -F "%t" 2>/dev/null' || true)
 
   if [ -z "$topics" ]; then
     echo "nothing retained under weather/outdoor/ — already clean"
