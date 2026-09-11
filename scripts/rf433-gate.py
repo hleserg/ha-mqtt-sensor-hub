@@ -19,6 +19,7 @@ u"""Ворота §2: разбор rtl_433 -> внешние сенсоры Home
 топики совпадают с симулятором побайтно — симулятор для того и написан:
 
   1. услышали неразрешённое  -> sensors/rf433/_discovered/<id>   НЕ retained
+  1а. ...если не заглушено   -> retained cmd/ignore/<id>, и тогда молчим
   2. владелец разрешил (script.rf_enable_sensor) -> retained cmd/enable/<id>
   3. разрешённое            -> homeassistant/.../config           retained
   4. и дальше состояние     -> sensors/rf433/<id>/<метрика>        retained
@@ -28,6 +29,17 @@ u"""Ворота §2: разбор rtl_433 -> внешние сенсоры Home
 их читают в начале каждого запуска. Своего состояния у ворот нет вообще — это
 не экономия, а требование: cron-задача, потерявшая файл состояния, не должна
 воскрешать сущности, которых владелец не разрешал.
+
+**Заглушенные (`cmd/ignore/<id>`) живут там же и по той же причине.** Напрашивалось
+читать их с ноды — у неё в реестре есть `trust: ignored`. Не годится: реестр
+ноды живёт в RAM и не переживает её перезагрузку, так что заглушка испарялась бы
+при каждом сбросе, а нода сбрасывается. Брокер переживает и перепрошивку ноды.
+Когда реестр ноды научится храниться, её ярлыки можно будет просто выгружать в
+эти же топики — сторона ворот не поменяется.
+
+Заглушка гасит только объявление. Разрешение сильнее: если id есть и в
+`cmd/enable`, и в `cmd/ignore`, прибор работает — владелец разрешил его явно, а
+заглушка это всего лишь «не показывай в кандидатах».
 
 `expire_after: 3600` на каждом значении — чужой датчик пропадает молча, и
 замерший навсегда retained-градус хуже дырки в графике. Своей станции такое
@@ -145,24 +157,25 @@ def broker_env():
 def broker_state():
     u"""Всё, что ворота помнят, лежит в брокере — читается одним заходом.
 
-    Три вещи: что владелец разрешил, накопленная статистика и библиотека кодов для
-    отправки. Раньше запусков контейнера было бы три; подписка на три фильтра
-    сразу стоит столько же, сколько на один, и все три среза гарантированно
-    сняты в один момент времени, а не в три разных.
+    Четыре вещи: что владелец разрешил, что заглушил, накопленная статистика и
+    библиотека кодов для отправки. Раньше запусков контейнера было бы четыре;
+    подписка на четыре фильтра сразу стоит столько же, сколько на один, и все
+    срезы гарантированно сняты в один момент времени, а не в четыре разных.
     """
     env = dict(os.environ, **broker_env())
     env['T1'] = 'sensors/%s/cmd/enable/#' % COLLECTOR
     env['T2'] = 'sensors/%s/+/usage' % COLLECTOR
     env['T3'] = 'sensors/%s/+/tx/+' % COLLECTOR
+    env['T4'] = 'sensors/%s/cmd/ignore/#' % COLLECTOR
     out = subprocess.run(
         ['docker', 'run', '--rm', '--network', 'host',
          '-e', 'H', '-e', 'P', '-e', 'U', '-e', 'W',
-         '-e', 'T1', '-e', 'T2', '-e', 'T3', IMAGE, 'sh', '-c',
+         '-e', 'T1', '-e', 'T2', '-e', 'T3', '-e', 'T4', IMAGE, 'sh', '-c',
          'mosquitto_sub -h "$H" -p "$P" -u "$U" -P "$W" '
-         '  -t "$T1" -t "$T2" -t "$T3" -v -W 2 2>/dev/null'],
+         '  -t "$T1" -t "$T2" -t "$T3" -t "$T4" -v -W 2 2>/dev/null'],
         capture_output=True, text=True, env=env, timeout=60)
 
-    enabled, usage, txlib = {}, {}, {}
+    enabled, ignored, usage, txlib = {}, set(), {}, {}
     for line in out.stdout.splitlines():
         topic, _, payload = line.partition(' ')
         parts = topic.split('/')
@@ -178,11 +191,16 @@ def broker_state():
         if '/cmd/enable/' in topic:
             if body.get('enabled'):
                 enabled[parts[-1]] = body.get('alias') or parts[-1]
+        elif '/cmd/ignore/' in topic:
+            # Симметрично разрешению: снятие заглушки — это пустая нагрузка,
+            # она отсеяна выше, и retained-сообщение исчезает целиком.
+            if body.get('ignored'):
+                ignored.add(parts[-1])
         elif topic.endswith('/usage') and len(parts) == 4:
             usage[parts[2]] = body
         elif len(parts) == 5 and parts[3] == 'tx':
             txlib.setdefault(parts[2], {})[parts[4]] = body
-    return enabled, usage, txlib
+    return enabled, ignored, usage, txlib
 
 
 def publish(batch):
@@ -278,9 +296,17 @@ def usage_update(prev, hit, now, tx, presses=1, codes_seen=None):
 
     # Окно недели режется по времени, а не по количеству: сто нажатий за час и
     # сто за неделю — это разные приборы, и обрезание по длине их сравняло бы.
-    edge = calendar.timegm(time.gmtime()) - USAGE_WINDOW
+    #
+    # Точка отсчёта — `now` этого прохода, а не настенные часы. В бою это одно
+    # и то же (проход и есть «сейчас»), а разница вылезает там, где время
+    # подают снаружи: самопроверка с зашитой датой начинала падать ровно через
+    # сутки после неё, потому что событие считалось по своему времени, а окно
+    # «за сутки» — по календарю машины. Смешивать два источника времени в
+    # одном сравнении нельзя, даже когда обычно они совпадают.
+    base = _ts(now) or calendar.timegm(time.gmtime())
+    edge = base - USAGE_WINDOW
     seen = [t for t in seen if _ts(t) >= edge][-5000:]
-    day = calendar.timegm(time.gmtime()) - 24 * 3600
+    day = base - 24 * 3600
 
     hours[local_hour(now)] += max(1, int(presses))
     codes = dict(u.get('codes') or {})
@@ -626,7 +652,7 @@ def run(lines, dry_run=False, state=None):
     напечатать в `--dry-run` и проверить в `--self-test`, не трогая брокер.
     """
     stat = {'lines': 0, 'noise': 0, 'hits': 0, 'devices': 0,
-            'announced': 0, 'enabled': 0, 'control': 0, 'bad_json': 0,
+            'announced': 0, 'ignored': 0, 'enabled': 0, 'control': 0, 'bad_json': 0,
             'rolling': 0, 'sendable': 0}
     hits, codes, caps = {}, {}, {}
     for line in lines:
@@ -691,17 +717,27 @@ def run(lines, dry_run=False, state=None):
     # что не разрешено ничего, и показывает лишь объявления. Ветку разрешённого
     # прибора иначе не проверить без брокера, а именно в ней живут кнопки.
     if state is not None:
-        enabled, usage_prev, txlib = state
+        # Проверки подсовывают состояние тройкой, как было до заглушек: тест,
+        # которому заглушки не нужны, не обязан про них знать.
+        enabled, usage_prev, txlib = state[:3]
+        ignored = state[3] if len(state) > 3 else set()
     elif dry_run:
-        enabled, usage_prev, txlib = {}, {}, {}
+        enabled, ignored, usage_prev, txlib = {}, set(), {}, {}
     else:
-        enabled, usage_prev, txlib = broker_state()
+        enabled, ignored, usage_prev, txlib = broker_state()
 
     for did, hit in sorted(hits.items()):
         hit.setdefault('device_id', did)
         if is_control(hit):
             stat['control'] += 1
         if did not in enabled:
+            if did in ignored:
+                # Заглушено владельцем: не объявляем вовсе. Счётчик всё равно
+                # ведём — молчание без числа неотличимо от того, что прибор
+                # пропал из эфира, и владелец будет искать поломку там, где
+                # работает его же решение.
+                stat['ignored'] += 1
+                continue
             # Объявление НЕ retained: оно описывает эфир сейчас. Retained
             # объявление воскрешало бы датчики, проехавшие мимо дома год назад.
             # Не чаще раза в минуту на устройство (§2) — соблюдается тем, что
@@ -778,6 +814,25 @@ def self_test():
     assert not any(re.match(r'sensors/rf433/[a-z]\w*/(temperature|event)$', t)
                    for t in topics), topics
     assert all(r == 0 for t, _, r in batch if '_discovered' in t), batch
+
+    # Заглушка гасит объявление и только его. Проверяем обе стороны: и что
+    # заглушенный молчит, и что соседа по тому же прогону это не задело —
+    # фильтр, гасящий заодно чужое, хуже отсутствия фильтра.
+    muted = ({}, {}, {}, {'akhan_100f14_324422'})
+    mb, mstat = run(sample, dry_run=True, state=muted)
+    mtopics = [t for t, _, _ in mb]
+    assert mstat['ignored'] == 1, mstat
+    assert mstat['announced'] == 1, mstat
+    assert 'sensors/rf433/_discovered/akhan_100f14_324422' not in mtopics, mtopics
+    assert 'sensors/rf433/_discovered/nexus_th_42_1' in mtopics, mtopics
+
+    # Разрешение сильнее заглушки: владелец, разрешивший прибор явно, не должен
+    # гадать, почему тот молчит из-за старой заглушки.
+    both = ({'akhan_100f14_324422': u'Пульт'}, {}, {}, {'akhan_100f14_324422'})
+    bb, bstat = run(sample, dry_run=True, state=both)
+    assert bstat['enabled'] == 1, bstat
+    assert bstat['ignored'] == 0, bstat
+    assert any(t.startswith('homeassistant/') for t, _, _ in bb), bb
 
     # Разрешённый датчик: описания сущностей, состояние retained, сырьё нет.
     hit = json.loads(sample[0])
