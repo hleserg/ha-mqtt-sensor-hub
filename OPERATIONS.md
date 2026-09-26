@@ -150,6 +150,38 @@ refused.
 
 ---
 
+## Frigate (runs on bigpc, not doctor)
+
+NVR and object detection for the iFEEL camera (192.168.1.141) live on bigpc
+(192.168.1.10) for its GPU, inside WSL2 Ubuntu, in `/mnt/nvme/frigate`:
+`docker-compose.yml`, `.env` (camera, MQTT and Frigate `admin` passwords,
+mode 600), `config/config.yml`, `media/`. UI: <https://192.168.1.10:8971>
+(self-signed certificate), user `admin`.
+
+```sh
+ssh bigpc                                           # Windows cmd, then:
+wsl -d Ubuntu
+cd /mnt/nvme/frigate && docker compose up -d        # start / apply compose changes
+docker restart frigate                              # apply config.yml changes
+curl -s 127.0.0.1:5000/api/stats | jq .detectors    # unauthenticated API, WSL-local only
+```
+
+Detection runs on the RTX 5070 Ti: `onnx` detector, YOLOv9-s 320, ~5 ms per
+inference. The model `config/model_cache/yolov9-s-320.onnx` is not downloaded
+by Frigate; `/mnt/nvme/frigate/export-yolov9.sh` builds it (docker build, took
+~2 h on 2026-09-26 because the ISP throttles PyPI). Lose it and detection stops.
+
+It talks to this stack only over MQTT (`frigate` user, `frigate/#`); HA reads
+it through the Frigate custom component, pointed at `https://192.168.1.10:8971`.
+
+**A new WSL port is not on the LAN until the owner's portproxy task runs.** The
+scheduled task `WSL LAN portproxy` republishes every `0.0.0.0` WSL port, but only
+every 30 minutes, and WSL's address changes on reboot. If HA shows Frigate
+`unavailable` or its config flow says `cannot_connect`, run it now on bigpc:
+`schtasks /run /tn "WSL LAN portproxy"`.
+
+---
+
 ## Updating
 
 ```sh
@@ -241,6 +273,7 @@ Full restore procedures, including what to re-run afterwards, are in
 | Devices on the LAN cannot reach 1883 | `sudo iptables -L IOT-MQTT-LAN -n`; the unit is `iot-stack-firewall.service` |
 | MeshCore entities went `unavailable` | something else grabbed the radio's single slot, or the node changed IP |
 | Entities named `sensor.outdoor_weather_station_*` | `./scripts/normalize-entity-ids.sh` |
+| Frigate entities `unavailable` in HA | on bigpc: `schtasks /run /tn "WSL LAN portproxy"` (see Frigate above) |
 
 Symptom → cause in detail: `TROUBLESHOOTING.md`.
 
