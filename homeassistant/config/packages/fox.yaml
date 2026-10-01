@@ -1,0 +1,179 @@
+# =============================================================================
+#  Лисёнок — поглаживания и кнопка (прошивка: ~/smart-fox/промт/fox-nightlight.yaml)
+# =============================================================================
+#  Поглаживания работают только при горящем ночнике light.lisenok_nochnik.
+#    Ночь 00:00–06:00: касание → торшер, лампа над машинкой и прихожая слева
+#      фиолетовые; в ванной побывали и минуту никого → гаснут.
+#    День 06:00–24:00: 5 касаний за 2 мин (active) → event.lisenok_raduetsia.
+#      По нему Алиса включает музыку и последним шагом жмёт «Хватит радоваться».
+#      Лисёнок сам мурчит и мигает минуту (прошивка). Пиратская люстра —
+#      светомузыка на 25 % до «Хватит радоваться» (не дольше 10 мин). Потом
+#      гаснет, если солнце над горизонтом, иначе тёплый свет на 40 %.
+#  Кнопка: двойное нажатие гасит весь свет, кроме лисёнка; если и так всё
+#    погашено — торшер тёплым на 10 %. Долгое — гасит Mi TV Stick, за ним по
+#    HDMI-CEC гаснет телевизор.
+#  Свет ванной и прихожей по присутствию — bath_presence_v1 в automations.yaml.
+# =============================================================================
+
+template:
+  - triggers:
+      - trigger: state
+        entity_id: event.komnata_lisenok_poglazhivanie
+        not_from: unavailable   # переподключение платы — не касание
+    conditions:
+      - "{{ trigger.to_state.attributes.event_type == 'active' }}"
+      - "{{ now().hour >= 6 and is_state('light.lisenok_nochnik', 'on') }}"
+    event:
+      - name: "Лисёнок: радуется"
+        unique_id: fox_happy_day
+        device_class: button
+        event_types: "{{ ['click'] }}"
+        event_type: "click"
+
+script:
+  fox_light_show:
+    alias: "Лисёнок: светомузыка на пиратской люстре"
+    mode: restart
+    sequence:
+      - variables:
+          lamps: [light.piratskaya_lyustra_1, light.piratskaya_lyustra_2,
+                  light.piratskaya_lyustra_3, light.piratskaya_lyustra_4]
+          # красный, оранжевый, жёлтый, зелёный, бирюзовый, синий, фиолетовый, малиновый
+          colors: [[255, 0, 0], [255, 120, 0], [255, 220, 0], [0, 255, 40],
+                   [0, 220, 255], [0, 50, 255], [160, 0, 255], [255, 0, 140]]
+      # Яркость один раз: дальше в цикле только цвет, вдвое меньше команд в эфире
+      - action: light.turn_on
+        target: { entity_id: "{{ lamps }}" }
+        data: { brightness_pct: 25, rgb_color: [255, 0, 0] }
+      # Бегущие огни: на каждом такте меняют цвет две лампы — 1 и 3, потом 2 и 4,
+      # соседки на три цвета врозь. Четыре команды за 0,5 с zigbee не тянул
+      # (z2m: «moveToColor failed»), две за 0,6 с — предел, что держит эфир.
+      # ponytail: 1000 тактов = 10 мин — страховка, если Алиса не нажмёт «Хватит».
+      - repeat:
+          count: 1000
+          sequence:
+            - variables:
+                step: "{{ repeat.index }}"
+            - repeat:
+                for_each: "{{ [0, 2] if step % 2 else [1, 3] }}"
+                sequence:
+                  - action: light.turn_on
+                    target: { entity_id: "{{ lamps[repeat.item] }}" }
+                    data:
+                      rgb_color: "{{ colors[(step + 3 * repeat.item) % 8] }}"
+                      transition: 0
+            - delay: { milliseconds: 600 }
+
+automation:
+  - id: fox_night_purple
+    alias: "Лисёнок: ночью погладили — фиолетовый путь"
+    mode: single
+    max_exceeded: silent   # касания во время пути — не новые запуски
+    triggers:
+      - trigger: state
+        entity_id: binary_sensor.lisenok_kasanie
+        from: "off"
+        to: "on"
+    conditions:
+      - "{{ now().hour < 6 and is_state('light.lisenok_nochnik', 'on') }}"
+    variables:
+      path: [light.torsher, light.vannaia_lampochka_nad_mashinkoi, light.prihozhaya_sleva_ot_vannoy]
+    actions:
+      - action: light.turn_on
+        target: { entity_id: "{{ path }}" }
+        data: { rgb_color: [163, 15, 224], brightness_pct: 30, transition: 1 }
+      # Ждём, пока дойдут до ванной; не дошли за 10 мин — гасим
+      - wait_template: "{{ is_state('binary_sensor.0xa4c138869ecdc59b_presence', 'on') }}"
+        timeout: "00:10:00"
+      - if: "{{ wait.completed }}"
+        then:
+          - wait_for_trigger:
+              - trigger: state
+                entity_id: binary_sensor.0xa4c138869ecdc59b_presence
+                to: "off"
+                for: "00:01:00"
+            timeout: "01:00:00"
+      - action: light.turn_off
+        target: { entity_id: "{{ path }}" }
+
+  - id: fox_happy_show
+    alias: "Лисёнок радуется — светомузыка"
+    mode: restart
+    triggers:
+      - trigger: state
+        entity_id: event.lisenok_raduetsia
+        not_from: unavailable
+        not_to: unavailable
+    variables:
+      lamps: [light.piratskaya_lyustra_1, light.piratskaya_lyustra_2,
+              light.piratskaya_lyustra_3, light.piratskaya_lyustra_4]
+    actions:
+      - action: script.turn_on
+        target: { entity_id: script.fox_light_show }
+      - wait_for_trigger:
+          - trigger: state
+            entity_id: button.komnata_lisenok_khvatit_radovatsia
+            not_from: unavailable
+            not_to: unavailable
+        timeout: "00:10:00"
+      - action: script.turn_off
+        target: { entity_id: script.fox_light_show }
+      - delay: 1   # дать z2m дослать цвета из очереди
+      # ponytail: светло/темно по солнцу; будет датчик освещённости снаружи — условие по нему
+      - if:
+          - condition: state
+            entity_id: sun.sun
+            state: above_horizon
+        then:
+          - action: light.turn_off
+            target: { entity_id: "{{ lamps }}" }
+        else:
+          - action: light.turn_on
+            target: { entity_id: "{{ lamps }}" }
+            data: { color_temp_kelvin: 2700, brightness_pct: 40 }
+
+  - id: fox_all_off
+    alias: "Лисёнок: двойное нажатие — весь свет выкл или торшер"
+    mode: single
+    triggers:
+      - trigger: state
+        entity_id: event.komnata_lisenok_nazhatie
+        not_from: unavailable
+    conditions:
+      - "{{ trigger.to_state.attributes.event_type == 'double_click' }}"
+    variables:
+      lit: >
+        {{ states.light | selectattr('state', 'eq', 'on') | map(attribute='entity_id')
+           | reject('eq', 'light.lisenok_nochnik') | list }}
+    actions:
+      - if: "{{ lit | count > 0 }}"
+        then:
+          # Оборвать путь и светомузыку, чтобы они ничего не включили обратно
+          - action: automation.turn_off
+            target: { entity_id: [automation.lisenok_nochiu_pogladili_fioletovyi_put,
+                                  automation.lisenok_raduetsia_svetomuzyka] }
+            data: { stop_actions: true }
+          - action: automation.turn_on
+            target: { entity_id: [automation.lisenok_nochiu_pogladili_fioletovyi_put,
+                                  automation.lisenok_raduetsia_svetomuzyka] }
+          - action: script.turn_off
+            target: { entity_id: script.fox_light_show }
+          - action: light.turn_off
+            target: { entity_id: "{{ lit }}" }
+        else:
+          - action: light.turn_on
+            target: { entity_id: light.torsher }
+            data: { color_temp_kelvin: 2700, brightness_pct: 10 }
+
+  - id: fox_tv_off
+    alias: "Лисёнок: долгое нажатие — телевизор выкл"
+    mode: single
+    triggers:
+      - trigger: state
+        entity_id: event.komnata_lisenok_nazhatie
+        not_from: unavailable
+    conditions:
+      - "{{ trigger.to_state.attributes.event_type == 'long_press' }}"
+    actions:
+      - action: remote.turn_off
+        target: { entity_id: remote.tv_pristavka_mi_tv_stick }

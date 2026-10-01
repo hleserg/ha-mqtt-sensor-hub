@@ -139,3 +139,67 @@
               payload: "{{ repeat.item.p }}"
               qos: 1
               retain: true
+- id: bath_presence_v1
+  alias: Ванная и прихожая по присутствию
+  description: 02:00–06:00 — фиолетовый 60 % над машинкой и в прихожей слева; 06:00–02:00
+    — вся ванная и прихожая тёплым 60 %. Минуту никого — всё выкл (датчик сам держит
+    присутствие ещё 60 с).
+  triggers:
+  - trigger: state
+    entity_id: binary_sensor.0xa4c138869ecdc59b_presence
+    to: 'on'
+    id: occupied
+  - trigger: state
+    entity_id: binary_sensor.0xa4c138869ecdc59b_presence
+    to: 'off'
+    for: 00:01:00
+    id: empty
+  conditions: []
+  actions:
+  - choose:
+    - conditions:
+      - condition: trigger
+        id: empty
+      sequence:
+      - action: light.turn_off
+        target:
+          entity_id:
+          - light.svet_v_vannoi
+          - light.vannaia_lampochka_nad_mashinkoi
+          - light.lampochka_nad_tualetom
+          - light.prihozhaya
+          - light.prihozhaya_sleva_ot_vannoy
+          - light.prihozhaya_sprava_ot_vannoy
+          - light.svet_v_koridore
+    - conditions:
+      - condition: time
+        after: 02:00:00
+        before: 06:00:00
+      sequence:
+      - action: light.turn_on
+        target:
+          entity_id:
+          - light.vannaia_lampochka_nad_mashinkoi
+          - light.prihozhaya_sleva_ot_vannoy
+        data:
+          rgb_color:
+          - 163
+          - 15
+          - 224
+          brightness_pct: 60
+    default:
+    - action: light.turn_on
+      target:
+        entity_id:
+        - light.vannaia_lampochka_nad_mashinkoi
+        - light.lampochka_nad_tualetom
+        - light.prihozhaya_sleva_ot_vannoy
+        - light.prihozhaya_sprava_ot_vannoy
+        - light.svet_v_koridore
+      data:
+        color_temp_kelvin: 2700
+        brightness_pct: 60
+    - action: light.turn_on
+      target:
+        entity_id: light.svet_v_vannoi
+  mode: restart
