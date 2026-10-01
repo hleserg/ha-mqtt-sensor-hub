@@ -180,6 +180,29 @@ every 30 minutes, and WSL's address changes on reboot. If HA shows Frigate
 `unavailable` or its config flow says `cannot_connect`, run it now on bigpc:
 `schtasks /run /tn "WSL LAN portproxy"`.
 
+## bigpc fan RGB (OpenRGB)
+
+`light.podsvetka_kompa` is the MSI MAG Z790 TOMAHAWK WIFI Mystic Light
+(USB 1462:7D91), served by OpenRGB 1.0 on bigpc and read by the core HA
+`openrgb` integration («Большой комп», 192.168.1.10:6742). OpenRGB lives in
+`C:\Program Files\OpenRGB` and runs as the scheduled task `OpenRGB server`
+(SYSTEM, at startup +30 s): `--server --server-host 0.0.0.0 --startminimized`.
+Without `--server-host` it listens on 127.0.0.1 only. Its config and logs are in
+the SYSTEM profile: `C:\Windows\System32\config\systemprofile\AppData\Roaming\OpenRGB\`.
+
+- MSI Center's lighting is off so it does not fight OpenRGB: the services
+  `Mystic_Light_Service` and `LightKeeperService` are Disabled, and so is the
+  task `\MSI Task Host - LEDKeeper2_Host`. The rest of MSI Center still runs.
+- The ARGB headers JRAINBOW1..3 were detected with 0 LEDs and are now resized to
+  20 each in OpenRGB's config. While they were 0, the board ignored every mode
+  change and stayed on `Rainbow wave`, until OpenRGB restarted with the sizes.
+- Direct mode is volatile, so after a reboot the board shows its own saved
+  effect until HA sets a color.
+- The GPU (`light.gigabyte_…`) is detected too; its entity is disabled.
+- The firewall rule `OpenRGB SDK from doctor` (TCP 6742 from 192.168.1.51)
+  exists, but bigpc's Private/Public firewall is off, so the unauthenticated
+  SDK port is reachable from the whole LAN.
+
 ---
 
 ## Updating
