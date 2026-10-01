@@ -1,0 +1,114 @@
+# =============================================================================
+#  Пиратская люстра — четыре лампы light.piratskaya_lyustra_1..4 как одно целое
+# =============================================================================
+#  light.piratskaya_lyustra — вся люстра. Включить/выключить = все четыре.
+#  Яркость и цвет идут только в горящие лампы, выключенные остаются
+#  выключенными; если не горит ни одна — включаются все с этим цветом.
+#
+#  Для Алисы ещё два переключателя, у каждого «включи» и «выключи» значат одно:
+#    switch.polovina_piratskoi_liustry — горят 1 и 3, гаснут 2 и 4;
+#    switch.odna_lampochka_piratskoi_liustry — горит одна случайная, прочие
+#      гаснут («выключи» гасит одну случайную из горящих).
+# =============================================================================
+
+template:
+  - light:
+      - name: "Пиратская люстра"
+        unique_id: piratskaya_lyustra
+        default_entity_id: light.piratskaya_lyustra
+        icon: mdi:chandelier
+        variables: &lamps
+          lamps:
+            - light.piratskaya_lyustra_1
+            - light.piratskaya_lyustra_2
+            - light.piratskaya_lyustra_3
+            - light.piratskaya_lyustra_4
+        state: "{{ lamps | select('is_state', 'on') | list | count > 0 }}"
+        level: >
+          {% set b = lamps | select('is_state', 'on') | map('state_attr', 'brightness')
+             | select('number') | list %}
+          {{ b | max if b else none }}
+        # Цвет и температура — с первой горящей лампы, в её текущем режиме.
+        temperature: >
+          {% set l = lamps | select('is_state', 'on') | first | default(none) %}
+          {% if l and state_attr(l, 'color_mode') == 'color_temp' %}
+            {{ (1000000 / state_attr(l, 'color_temp_kelvin')) | round | int }}
+          {% else %}{{ none }}{% endif %}
+        hs: >
+          {% set l = lamps | select('is_state', 'on') | first | default(none) %}
+          {% if l and state_attr(l, 'color_mode') == 'xy' %}
+            {{ state_attr(l, 'hs_color') | list }}
+          {% else %}{{ none }}{% endif %}
+        turn_on:
+          - action: light.turn_on
+            target: { entity_id: "{{ lamps }}" }
+        turn_off:
+          - action: light.turn_off
+            target: { entity_id: "{{ lamps }}" }
+        set_level:
+          - action: script.piratskaya_lyustra_apply
+            data: { data: { brightness: "{{ brightness }}" } }
+        set_temperature:
+          - action: script.piratskaya_lyustra_apply
+            data:
+              data: >
+                {% set d = {'color_temp_kelvin': color_temp_kelvin} %}
+                {{ dict(d, brightness=brightness) if brightness is defined else d }}
+        set_hs:
+          - action: script.piratskaya_lyustra_apply
+            data:
+              data: >
+                {% set d = {'hs_color': hs} %}
+                {{ dict(d, brightness=brightness) if brightness is defined else d }}
+
+  - switch:
+      - name: "Половина пиратской люстры"
+        unique_id: polovina_piratskoi_liustry
+        default_entity_id: switch.polovina_piratskoi_liustry
+        icon: mdi:lightbulb-group-outline
+        state: >
+          {{ is_state('light.piratskaya_lyustra_1', 'on') and is_state('light.piratskaya_lyustra_3', 'on')
+             and is_state('light.piratskaya_lyustra_2', 'off') and is_state('light.piratskaya_lyustra_4', 'off') }}
+        turn_on: &half
+          - action: light.turn_on
+            target: { entity_id: [light.piratskaya_lyustra_1, light.piratskaya_lyustra_3] }
+          - action: light.turn_off
+            target: { entity_id: [light.piratskaya_lyustra_2, light.piratskaya_lyustra_4] }
+        turn_off: *half
+
+      - name: "Одна лампочка пиратской люстры"
+        unique_id: odna_lampochka_piratskoi_liustry
+        default_entity_id: switch.odna_lampochka_piratskoi_liustry
+        icon: mdi:lightbulb-outline
+        variables: *lamps
+        state: "{{ lamps | select('is_state', 'on') | list | count == 1 }}"
+        turn_on:
+          - variables:
+              one: "{{ lamps | random }}"
+          - action: light.turn_on
+            target: { entity_id: "{{ one }}" }
+          - action: light.turn_off
+            target: { entity_id: "{{ lamps | reject('eq', one) | list }}" }
+        turn_off:
+          - variables:
+              lit: "{{ lamps | select('is_state', 'on') | list }}"
+          - condition: template
+            value_template: "{{ lit | count > 0 }}"
+          - action: light.turn_off
+            target: { entity_id: "{{ lit | random }}" }
+
+script:
+  # Яркость/цвет — только горящим лампам; если не горит ни одна — всем.
+  piratskaya_lyustra_apply:
+    alias: "Пиратская люстра: применить к горящим"
+    mode: queued
+    fields:
+      data: { description: "данные для light.turn_on" }
+    sequence:
+      - variables:
+          lamps: [light.piratskaya_lyustra_1, light.piratskaya_lyustra_2,
+                  light.piratskaya_lyustra_3, light.piratskaya_lyustra_4]
+          lit: "{{ lamps | select('is_state', 'on') | list }}"
+      - action: light.turn_on
+        target: { entity_id: "{{ lit if lit else lamps }}" }
+        data: "{{ data }}"
