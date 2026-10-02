@@ -194,8 +194,16 @@ the SYSTEM profile: `C:\Windows\System32\config\systemprofile\AppData\Roaming\Op
   `Mystic_Light_Service` and `LightKeeperService` are Disabled, and so is the
   task `\MSI Task Host - LEDKeeper2_Host`. The rest of MSI Center still runs.
 - The ARGB headers JRAINBOW1..3 were detected with 0 LEDs and are now resized to
-  100 each in OpenRGB's config. While they were 0, the board ignored every mode
-  change and stayed on `Rainbow wave`, until OpenRGB restarted with the sizes.
+  6 each in OpenRGB's config (SDK `zone.resize`, then restart the task). While
+  they were 0, the board ignored every mode change and stayed on `Rainbow wave`,
+  until OpenRGB restarted with the sizes. The size must match the real strip:
+  at 100 the hardware effects looked single-coloured and glitchy on 6-LED fans.
+- What sits where (checked by lighting one header at a time): JRAINBOW1 — the
+  front case fans, 6 LEDs each, wired in parallel so every fan repeats LEDs
+  0..5; JRAINBOW2/3 — empty; JRGB1 (12 V, one colour) — the CPU cooler.
+- JRGB1 does not light in Direct mode, only in the board's hardware modes. HA
+  uses Direct for «no effect», so a plain colour from HA leaves the cooler
+  dark; any HA effect lights it. HA does not offer `Static` as an effect.
 - The case fans used to run from the case's own hub (C039 V3.1, no sync
   input, own button). Their cable «MAIN» now goes straight to JRAINBOW1
   (board label JARGB_V2_1, bottom edge by JPWRLED1, `+5V · D · _ · G`).
