@@ -200,7 +200,9 @@ the SYSTEM profile: `C:\Windows\System32\config\systemprofile\AppData\Roaming\Op
   at 100 the hardware effects looked single-coloured and glitchy on 6-LED fans.
 - What sits where (checked by lighting one header at a time): JRAINBOW1 — the
   front case fans, 6 LEDs each, wired in parallel so every fan repeats LEDs
-  0..5; JRAINBOW2/3 — empty; JRGB1 (12 V, one colour) — the CPU cooler.
+  0..5; JRAINBOW2/3 — empty; JRGB1 (12 V, one colour) — the CPU cooler,
+  Cooler Master ML240L V2 RGB (MLW-D24M-A18PC-R2: pump and both radiator fans
+  are 12 V RGB, so no per-LED effects on it from any header).
 - JRGB1 does not light in Direct mode, only in the board's hardware modes. HA
   uses Direct for «no effect», so a plain colour from HA leaves the cooler
   dark; any HA effect lights it. HA does not offer `Static` as an effect.
