@@ -166,7 +166,6 @@ template:
   - triggers:
       - trigger: state
         entity_id: binary_sensor.betapi_ac_ok
-        from: "on"
         to: "off"
         for: {seconds: 30}
     event:
@@ -227,7 +226,6 @@ template:
   - triggers:
       - trigger: state
         entity_id: binary_sensor.betapi_online
-        from: "on"
         to: "off"
         for: {minutes: 3}
     event:

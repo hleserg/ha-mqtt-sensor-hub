@@ -405,17 +405,17 @@ mqtt:
       model: Mac mini M1, macOS 15
 
 # Алерты. Каждый — отдельная «кнопка» для своего сценария Алисы.
-# from_state != unavailable/unknown — рестарт HA или публикатора не будит Алису.
+# Хост, который всё ещё лежит после рестарта HA, напомнит о себе ещё раз — это нормально.
 # «doctor пропал» не делаем: HA живёт на нём и упадёт вместе с ним.
 template:
   # ---------------------------------------------------------- пропал из сети
-  # Ребут ~1–2 мин, поэтому 3 минуты; у mac-mini Wi-Fi моргает — 10.
+  # Ребут ~1–2 мин, поэтому 3 минуты; mc-server грузится дольше — 5; у mac-mini Wi-Fi моргает — 10.
+  # Без from: "on" — иначе рестарт HA (off → unavailable → off) теряет алерт.
   - triggers:
       - trigger: state
         entity_id: binary_sensor.mc_server_online
-        from: "on"
         to: "off"
-        for: {minutes: 3}
+        for: {minutes: 5}
     event:
       - name: "mc-server: пропал из сети"
         unique_id: mc_server_alert_offline
@@ -426,7 +426,6 @@ template:
   - triggers:
       - trigger: state
         entity_id: binary_sensor.bigpc_online
-        from: "on"
         to: "off"
         for: {minutes: 3}
     event:
@@ -439,7 +438,6 @@ template:
   - triggers:
       - trigger: state
         entity_id: binary_sensor.mac_mini_online
-        from: "on"
         to: "off"
         for: {minutes: 10}
     event:
@@ -542,3 +540,53 @@ template:
         device_class: button
         event_types: "{{ ['click'] }}"
         event_type: "click"
+
+# Алерт -> Алиса говорит сама, без сценариев в приложении Яндекса. Ночью
+# (00–08) молчит, кроме пропажи света и перегрева; уведомление в HA — всегда.
+automation:
+  - id: hosts_alert_speak
+    alias: "Компы: алерт голосом Алисы"
+    mode: queued
+    triggers:
+      - trigger: state
+        entity_id:
+          - event.mc_server_alert_offline
+          - event.bigpc_alert_offline
+          - event.mac_mini_alert_offline
+          - event.doctor_alert_disk_full
+          - event.mc_server_alert_disk_full
+          - event.bigpc_alert_disk_full
+          - event.mac_mini_alert_disk_full
+          - event.doctor_alert_overheat
+          - event.mc_server_alert_overheat
+          - event.betapi_alert_power_lost
+          - event.betapi_alert_battery_low
+          - event.betapi_alert_disk_full
+          - event.betapi_alert_overheat
+          - event.betapi_alert_offline
+        not_from: unavailable
+        not_to: unavailable
+    conditions:
+      - "{{ trigger.from_state is not none }}"
+    variables:
+      name: "{{ trigger.to_state.name }}"
+      text: >-
+        {{ name | replace('mc-server', 'эм си сервер') | replace('bigpc', 'большой комп')
+           | replace('mac-mini', 'мак мини') | replace('doctor', 'доктор')
+           | replace('BetaPi', 'бета пай') | replace(':', ',') }}
+      urgent: "{{ trigger.entity_id.endswith(('power_lost', 'overheat', 'battery_low')) }}"
+    actions:
+      - action: persistent_notification.create
+        data:
+          title: "{{ name }}"
+          message: "{{ now().strftime('%d.%m %H:%M') }}"
+      - if: "{{ urgent or now().hour >= 8 }}"
+        then:
+          - action: media_player.play_media
+            target:
+              entity_id:
+                - media_player.yandex_station_ff98f029d7407353fb617159
+                - media_player.yandex_station_lg0000000000001122190000a5c43d60
+            data:
+              media_content_type: text
+              media_content_id: "Внимание. {{ text }}"
