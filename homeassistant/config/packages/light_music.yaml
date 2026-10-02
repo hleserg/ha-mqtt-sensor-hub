@@ -9,7 +9,10 @@
 #  На каждый трек берёт у Deezer темп и жанр: быстрое/жёсткое — новый цвет и
 #  вспышка на каждый удар, среднее — смена цвета на удар с переходом, спокойное —
 #  плавный дрейф по синим и тёплым раз в два удара. Нет темпа — по жанру.
-#  Станция не играет 15 с или «выключи светомузыку» — свет как был до этого.
+#  Яркость по громкости станции: тише музыка — тусклее свет.
+#  Станция не играет 3 с (пауза, стоп) или выключили устройство — свет как был.
+#  «Алиса, выключи светомузыку» Алиса понимает как «выключи музыку» и ставит
+#  паузу — фразу перехватывает сценарий в приложении Яндекса (делает владелец).
 #  Удары не ловятся: станция не отдаёт звук. Темп верный, фаза — нет.
 # =============================================================================
 
@@ -139,6 +142,7 @@ automation:
               data:
                 variables:
                   target: "{{ target }}"
+                  station: "{{ station }}"
                   style: "{{ style }}"
                   period: "{{ (beat * (2 if style == 'calm' else 1)) | round(3) }}"
             - action: logbook.log
@@ -153,7 +157,7 @@ automation:
                   value_template: "{{ (state_attr(station, 'media_title') or '') != title }}"
                 - trigger: template
                   value_template: "{{ not is_state(station, 'playing') }}"
-                  for: 15
+                  for: 3
               timeout: "00:15:00"
             - if: "{{ not is_state(station, 'playing') }}"
               then:
@@ -182,6 +186,8 @@ script:
     fields:
       target:
         description: Лампа или zigbee-группа
+      station:
+        description: Станция — по её громкости яркость
       style:
         description: energy, mid или calm
       period:
@@ -200,13 +206,16 @@ script:
                 hue: >-
                   {{ hues[i % hues | count] if style == 'calm'
                      else hues[(i * 3) % hues | count] }}
+                # Louder — brighter: volume 0.6 gives 82 % of the base (owner: 15–20 % dimmer).
+                dim: "{{ (state_attr(station, 'volume_level') or 0.6) | float(0.6) * 1.37 }}"
             - action: light.turn_on
               target: { entity_id: "{{ target }}" }
               data:
                 hs_color: "{{ [hue, 70 if style == 'calm' else 100] }}"
                 brightness_pct: >-
-                  {{ 30 if style == 'calm' else 50 if style == 'mid'
-                     else (70 if i % 2 else 25) }}
+                  {% set base = 30 if style == 'calm' else 50 if style == 'mid'
+                       else (70 if i % 2 else 25) %}
+                  {{ [3, [100, (base * dim) | round(0) | int] | min] | max }}
                 transition: >-
                   {{ period if style == 'calm' else (period / 2) | round(2)
                      if style == 'mid' else 0 }}
