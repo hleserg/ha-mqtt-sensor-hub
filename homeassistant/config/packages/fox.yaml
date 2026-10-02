@@ -6,9 +6,9 @@
 #      фиолетовые; в ванной побывали и минуту никого → гаснут.
 #    День 06:00–24:00: 5 касаний за 2 мин (active) → event.lisenok_raduetsia.
 #      По нему Алиса включает музыку и последним шагом жмёт «Хватит радоваться».
-#      Лисёнок сам мурчит и мигает минуту (прошивка). Пиратская люстра —
-#      светомузыка на 25 % до «Хватит радоваться» (не дольше 10 мин). Потом
-#      гаснет, если солнце над горизонтом, иначе тёплый свет на 40 %.
+#      Лисёнок сам мурчит и мигает минуту (прошивка). На люстре — светомузыка
+#      из light_music.yaml (цвет и темп по треку) до «Хватит радоваться», не
+#      дольше 10 мин. Потом гаснет, если солнце над горизонтом, иначе тёплый 40 %.
 #  Кнопка: двойное нажатие гасит весь свет, кроме лисёнка; если и так всё
 #    погашено — торшер тёплым на 10 %. Долгое — гасит Mi TV Stick, за ним по
 #    HDMI-CEC гаснет телевизор.
@@ -29,40 +29,6 @@ template:
         device_class: button
         event_types: "{{ ['click'] }}"
         event_type: "click"
-
-script:
-  fox_light_show:
-    alias: "Лисёнок: светомузыка на пиратской люстре"
-    mode: restart
-    sequence:
-      - variables:
-          lamps: [light.piratskaya_lyustra_1, light.piratskaya_lyustra_2,
-                  light.piratskaya_lyustra_3, light.piratskaya_lyustra_4]
-          # красный, оранжевый, жёлтый, зелёный, бирюзовый, синий, фиолетовый, малиновый
-          colors: [[255, 0, 0], [255, 120, 0], [255, 220, 0], [0, 255, 40],
-                   [0, 220, 255], [0, 50, 255], [160, 0, 255], [255, 0, 140]]
-      # Яркость один раз: дальше в цикле только цвет, вдвое меньше команд в эфире
-      - action: light.turn_on
-        target: { entity_id: "{{ lamps }}" }
-        data: { brightness_pct: 25, rgb_color: [255, 0, 0] }
-      # Бегущие огни: на каждом такте меняют цвет две лампы — 1 и 3, потом 2 и 4,
-      # соседки на три цвета врозь. Четыре команды за 0,5 с zigbee не тянул
-      # (z2m: «moveToColor failed»), две за 0,6 с — предел, что держит эфир.
-      # ponytail: 1000 тактов = 10 мин — страховка, если Алиса не нажмёт «Хватит».
-      - repeat:
-          count: 1000
-          sequence:
-            - variables:
-                step: "{{ repeat.index }}"
-            - repeat:
-                for_each: "{{ [0, 2] if step % 2 else [1, 3] }}"
-                sequence:
-                  - action: light.turn_on
-                    target: { entity_id: "{{ lamps[repeat.item] }}" }
-                    data:
-                      rgb_color: "{{ colors[(step + 3 * repeat.item) % 8] }}"
-                      transition: 0
-            - delay: { milliseconds: 600 }
 
 automation:
   - id: fox_night_purple
@@ -108,17 +74,23 @@ automation:
       lamps: [light.piratskaya_lyustra_1, light.piratskaya_lyustra_2,
               light.piratskaya_lyustra_3, light.piratskaya_lyustra_4]
     actions:
-      - action: script.turn_on
-        target: { entity_id: script.fox_light_show }
+      # По тому же событию Алиса включает музыку — дать ей начать, иначе
+      # светомузыка поставит поверх «мою волну».
+      # ponytail: комнату светомузыка берёт по станции, которая слушала ≤ 60 с
+      # назад; говорили только что с кухонной — замигает кухня.
+      - wait_template: "{{ is_state('media_player.yandex_station_ff98f029d7407353fb617159', 'playing') }}"
+        timeout: 10
+      - action: input_boolean.turn_on
+        target: { entity_id: input_boolean.svetomuzyka }
       - wait_for_trigger:
           - trigger: state
             entity_id: button.komnata_lisenok_khvatit_radovatsia
             not_from: unavailable
             not_to: unavailable
         timeout: "00:10:00"
-      - action: script.turn_off
-        target: { entity_id: script.fox_light_show }
-      - delay: 1   # дать z2m дослать цвета из очереди
+      - action: input_boolean.turn_off
+        target: { entity_id: input_boolean.svetomuzyka }
+      - delay: 3   # светомузыка вернёт свет как был, потом наш
       # ponytail: светло/темно по солнцу; будет датчик освещённости снаружи — условие по нему
       - if:
           - condition: state
@@ -150,14 +122,16 @@ automation:
         then:
           # Оборвать путь и светомузыку, чтобы они ничего не включили обратно
           - action: automation.turn_off
-            target: { entity_id: [automation.lisenok_nochiu_pogladili_fioletovyi_put,
-                                  automation.lisenok_raduetsia_svetomuzyka] }
+            target: { entity_id: &fox_runs [automation.lisenok_nochiu_pogladili_fioletovyi_put,
+                                            automation.lisenok_raduetsia_svetomuzyka,
+                                            automation.svetomuzyka] }
             data: { stop_actions: true }
           - action: automation.turn_on
-            target: { entity_id: [automation.lisenok_nochiu_pogladili_fioletovyi_put,
-                                  automation.lisenok_raduetsia_svetomuzyka] }
+            target: { entity_id: *fox_runs }
           - action: script.turn_off
-            target: { entity_id: script.fox_light_show }
+            target: { entity_id: script.light_music_show }
+          - action: input_boolean.turn_off
+            target: { entity_id: input_boolean.svetomuzyka }
           - action: light.turn_off
             target: { entity_id: "{{ lit }}" }
         else:
