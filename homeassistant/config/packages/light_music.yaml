@@ -187,8 +187,8 @@ script:
               data:
                 hs_color: "{{ [hue, 70 if style == 'calm' else 100] }}"
                 brightness_pct: >-
-                  {{ 45 if style == 'calm' else 70 if style == 'mid'
-                     else (100 if i % 2 else 35) }}
+                  {{ 30 if style == 'calm' else 50 if style == 'mid'
+                     else (70 if i % 2 else 25) }}
                 transition: >-
                   {{ period if style == 'calm' else (period / 2) | round(2)
                      if style == 'mid' else 0 }}
