@@ -194,8 +194,14 @@ the SYSTEM profile: `C:\Windows\System32\config\systemprofile\AppData\Roaming\Op
   `Mystic_Light_Service` and `LightKeeperService` are Disabled, and so is the
   task `\MSI Task Host - LEDKeeper2_Host`. The rest of MSI Center still runs.
 - The ARGB headers JRAINBOW1..3 were detected with 0 LEDs and are now resized to
-  20 each in OpenRGB's config. While they were 0, the board ignored every mode
+  100 each in OpenRGB's config. While they were 0, the board ignored every mode
   change and stayed on `Rainbow wave`, until OpenRGB restarted with the sizes.
+- The case fans used to run from the case's own hub (C039 V3.1, no sync
+  input, own button). Their cable «MAIN» now goes straight to JRAINBOW1
+  (board label JARGB_V2_1, bottom edge by JPWRLED1, `+5V · D · _ · G`).
+  MAIN has three contacts in a row and does not fit the gapped header as is:
+  G has to reach the fourth pin separately (contact out of the housing, or
+  Dupont wires). Swapping 5V and G burns the LEDs.
 - Direct mode is volatile, so after a reboot the board shows its own saved
   effect until HA sets a color.
 - The GPU (`light.gigabyte_…`) is detected too; its entity is disabled.
