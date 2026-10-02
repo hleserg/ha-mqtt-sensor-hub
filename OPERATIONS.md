@@ -244,6 +244,20 @@ with `host_mqtt.py`; HASS.Agent publishes no sensors.
 - The agent logs nothing when a command runs; check from HA that the button's
   state (last press time) moved and that mosquitto logged no `denied`.
 
+### YouTube limit
+
+`packages/youtube_limit.yaml` holds the rules. The on/off switch is
+`input_boolean.youtube_limit`, also on the «Пульт» dashboard in the «YouTube на компе» view.
+It needs two HASS.Agent entities, added in the agent's GUI:
+- sensor ActiveWindow, entity name `activewindow`, interval 5 s
+  (→ `sensor.bigpc_agent_activewindow`);
+- command PowerShell, type button, entity name `yt_close`, command
+  `C:\Users\Serg\AppData\Local\HASS.Agent\yt-close.ps1` (copy of
+  `tools/yt-close.ps1`). HA passes the message as the command's action
+  (`homeassistant/button/bigpc_agent/yt_close/action`).
+
+Adding a `counter` or `history_stats` entity needs an HA restart; reload does not pick them up.
+
 ---
 
 ## Updating

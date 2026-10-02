@@ -98,3 +98,17 @@ views:
             name: Меню
             icon: mdi:menu
             tap_action: { <<: *send, data: { command: MENU } }
+
+  - title: YouTube на компе
+    path: youtube
+    icon: mdi:youtube
+    cards:
+      - type: entities
+        title: Лимит YouTube (bigpc)
+        entities:
+          - input_boolean.youtube_limit
+          - binary_sensor.bigpc_youtube
+          - sensor.youtube_segodnia
+          - counter.youtube_streak
+          - counter.youtube_cycle
+          - timer.youtube_break

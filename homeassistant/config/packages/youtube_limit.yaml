@@ -1,0 +1,168 @@
+# =============================================================================
+#  Лимит YouTube на bigpc
+# =============================================================================
+#  Считается только YouTube в браузере на переднем плане: HASS.Agent на bigpc
+#  шлёт заголовок активного окна (sensor.bigpc_agent_activewindow). Фоновая
+#  вкладка и YouTube на стике не считаются; «YouTube Music» считается.
+#
+#  Правила работают, пока включён input_boolean.youtube_limit:
+#  - 45 мин подряд → перерыв 15 мин. «Подряд» обнуляют 15 мин без YouTube.
+#  - 2 ч за цикл → перерыв 1 ч. Цикл обнуляет 1 ч без YouTube.
+#  - 00:00–07:00 — нельзя.
+#  Минуты считаются раз в минуту по состоянию в этот момент.
+#  В перерыв HA шлёт action кнопке HASS.Agent yt_close → tools/yt-close.ps1:
+#  тот сам проверяет, что впереди браузер с YouTube, жмёт Ctrl+W и показывает
+#  окно с причиной. Выключил выключатель — счётчики и перерыв сбрасываются.
+# =============================================================================
+
+input_boolean:
+  youtube_limit:
+    name: Лимит YouTube
+    icon: mdi:youtube
+
+counter:
+  youtube_streak:
+    name: YouTube подряд, мин
+    icon: mdi:timer-play-outline
+  youtube_cycle:
+    name: YouTube за цикл, мин
+    icon: mdi:timer-sand
+  youtube_idle:
+    name: Без YouTube, мин
+    icon: mdi:timer-off-outline
+
+timer:
+  youtube_break:
+    name: Перерыв YouTube
+    icon: mdi:timer-lock-outline
+    restore: true
+
+template:
+  - binary_sensor:
+      - name: bigpc YouTube
+        unique_id: bigpc_youtube_foreground
+        icon: mdi:youtube
+        state: >
+          {% set w = 'sensor.bigpc_agent_activewindow' %}
+          {{ 'YouTube' in states(w)
+             and (state_attr(w, 'processName') or '') | lower
+                 in ['chrome', 'msedge', 'firefox', 'browser', 'opera'] }}
+
+sensor:
+  - platform: history_stats
+    name: YouTube сегодня
+    unique_id: bigpc_youtube_today
+    entity_id: binary_sensor.bigpc_youtube
+    state: "on"
+    type: time
+    start: "{{ today_at() }}"
+    end: "{{ now() }}"
+
+automation:
+  - id: youtube_limit_tick
+    alias: YouTube — счёт минут
+    mode: single
+    triggers:
+      - trigger: time_pattern
+        minutes: "/1"
+    conditions:
+      - condition: state
+        entity_id: input_boolean.youtube_limit
+        state: "on"
+    actions:
+      - if:
+          - condition: state
+            entity_id: binary_sensor.bigpc_youtube
+            state: "on"
+        then:
+          - action: counter.increment
+            target:
+              entity_id: [counter.youtube_streak, counter.youtube_cycle]
+          - action: counter.reset
+            target:
+              entity_id: counter.youtube_idle
+        else:
+          - action: counter.increment
+            target:
+              entity_id: counter.youtube_idle
+          - if: "{{ states('counter.youtube_idle') | int >= 15 }}"
+            then:
+              - action: counter.reset
+                target:
+                  entity_id: counter.youtube_streak
+          - if: "{{ states('counter.youtube_idle') | int >= 60 }}"
+            then:
+              - action: counter.reset
+                target:
+                  entity_id: counter.youtube_cycle
+      - choose:
+          - conditions: "{{ states('counter.youtube_cycle') | int >= 120 }}"
+            sequence:
+              - action: timer.start
+                target:
+                  entity_id: timer.youtube_break
+                data:
+                  duration: "01:00:00"
+              - action: counter.reset
+                target:
+                  entity_id: [counter.youtube_cycle, counter.youtube_streak]
+          - conditions: "{{ states('counter.youtube_streak') | int >= 45 }}"
+            sequence:
+              - action: timer.start
+                target:
+                  entity_id: timer.youtube_break
+                data:
+                  duration: "00:15:00"
+              - action: counter.reset
+                target:
+                  entity_id: counter.youtube_streak
+
+  - id: youtube_limit_enforce
+    alias: YouTube — закрыть вкладку в перерыв
+    mode: single
+    triggers:
+      - trigger: state
+        entity_id: binary_sensor.bigpc_youtube
+        to: "on"
+      # Retry: the tab may survive Ctrl+W, or the break may start while
+      # YouTube is already in front.
+      - trigger: time_pattern
+        seconds: "/20"
+    conditions:
+      - condition: state
+        entity_id: input_boolean.youtube_limit
+        state: "on"
+      - condition: state
+        entity_id: binary_sensor.bigpc_youtube
+        state: "on"
+      - condition: or
+        conditions:
+          - condition: state
+            entity_id: timer.youtube_break
+            state: active
+          - condition: time
+            before: "07:00:00"
+    actions:
+      - action: mqtt.publish
+        data:
+          topic: homeassistant/button/bigpc_agent/yt_close/action
+          payload: >-
+            {% if is_state('timer.youtube_break', 'active') %}YouTube: перерыв до
+            {{ as_timestamp(state_attr('timer.youtube_break', 'finishes_at'))
+               | timestamp_custom('%H:%M') }}{% else %}YouTube: ночью нельзя, до
+            07:00{% endif %}
+      - delay: 5
+
+  - id: youtube_limit_off
+    alias: YouTube — лимит выключен, сброс
+    triggers:
+      - trigger: state
+        entity_id: input_boolean.youtube_limit
+        to: "off"
+    actions:
+      - action: timer.cancel
+        target:
+          entity_id: timer.youtube_break
+      - action: counter.reset
+        target:
+          entity_id: [counter.youtube_streak, counter.youtube_cycle, counter.youtube_idle]
