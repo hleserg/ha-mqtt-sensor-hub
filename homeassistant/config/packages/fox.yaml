@@ -71,8 +71,7 @@ automation:
         not_from: unavailable
         not_to: unavailable
     variables:
-      lamps: [light.piratskaya_lyustra_1, light.piratskaya_lyustra_2,
-              light.piratskaya_lyustra_3, light.piratskaya_lyustra_4]
+      lamps: light.piratskaia_liustra_gruppa   # z2m-группа: одна команда, лампа 1 ловит
     actions:
       # По тому же событию Алиса включает музыку — дать ей начать, иначе
       # светомузыка поставит поверх «мою волну».
@@ -90,7 +89,7 @@ automation:
         timeout: "00:10:00"
       - action: input_boolean.turn_off
         target: { entity_id: input_boolean.svetomuzyka }
-      - delay: 3   # светомузыка вернёт свет как был, потом наш
+      - delay: 6   # светомузыка возвращает свет как был (2 прохода по 2 с), потом наш
       # ponytail: светло/темно по солнцу; будет датчик освещённости снаружи — условие по нему
       - if:
           - condition: state

@@ -3,9 +3,9 @@
 # =============================================================================
 #  input_boolean.svetomuzyka выставлен в Алису устройством «Светомузыка».
 #  Включили — HA берёт станцию, которая последней слушала (≤ 60 с назад; иначе
-#  Мини), и свет её комнаты: Комната — пиратская люстра (zigbee-группа, одна
-#  команда на 4 лампы), Кухня — «Кухня люстра 1» (остальные там только вкл/выкл).
-#  Если станция ничего не играет — велит ей «включи мою волну».
+#  Мини), и свет её комнаты: Комната — z2m-группа «Пиратская люстра группа»
+#  (одна команда на 4 лампы), Кухня — «Кухня люстра 1» (остальные там только вкл/выкл).
+#  Станция играет — музыку не трогает, только свет; молчит 5 с — «включи мою волну».
 #  На каждый трек берёт у Deezer темп и жанр: быстрое/жёсткое — новый цвет и
 #  вспышка на каждый удар, среднее — смена цвета на удар с переходом, спокойное —
 #  плавный дрейф по синим и тёплым раз в два удара. Нет темпа — по жанру.
@@ -57,16 +57,22 @@ automation:
                if heard_at and now() - as_datetime(heard_at) < timedelta(seconds=60)
                else mini }}
           kitchen: "{{ station != mini }}"
-          target: "{{ 'light.kuhnya_lyustra_1' if kitchen else 'light.piratskaya_lyustra' }}"
+          # Not light.piratskaya_lyustra: that template light sends 4 unicasts per
+          # tick, z2m drops some and delivers the rest after the stop.
+          target: "{{ 'light.kuhnya_lyustra_1' if kitchen else 'light.piratskaia_liustra_gruppa' }}"
           lamps: >-
             {{ ['light.kuhnya_lyustra_1'] if kitchen else
                ['light.piratskaya_lyustra_1', 'light.piratskaya_lyustra_2',
                 'light.piratskaya_lyustra_3', 'light.piratskaya_lyustra_4'] }}
+          was_off: "{{ lamps | select('is_state', 'on') | list | count == 0 }}"
       - action: scene.create
         data:
           scene_id: light_music_before
           snapshot_entities: "{{ lamps }}"
-      - if: "{{ not is_state(station, 'playing') }}"
+      # Alice pauses the music while she listens: give it 5 s to resume.
+      - wait_template: "{{ is_state(station, 'playing') }}"
+        timeout: 5
+      - if: "{{ not wait.completed }}"
         then:
           - action: media_player.play_media
             target: { entity_id: "{{ station }}" }
@@ -121,11 +127,13 @@ automation:
                   {{ 'energy' if tempo >= 118 or (hard and (tempo == 0 or tempo >= 95))
                      else 'calm' if (0 < tempo < 90) or (soft and tempo < 110)
                      else 'mid' }}
-                # One command per tick; a group or a single lamp, so 2/s is safe.
+                # One groupcast per tick. Groupcasts are broadcasts and the Ember
+                # broadcast table fills up: measured 0/28 lost at 0.7 s, 9/40 at
+                # 0.5 s. Faster beats get every second one.
                 beat: >-
                   {% set b = 60 / tempo if tempo > 0 else
-                       (0.5 if style == 'energy' else 0.65 if style == 'mid' else 0.9) %}
-                  {{ b * 2 if b < 0.45 else b }}
+                       (0.7 if style == 'energy' else 0.8 if style == 'mid' else 0.9) %}
+                  {{ b * 2 if b < 0.7 else b }}
             - action: script.turn_on
               target: { entity_id: script.light_music_show }
               data:
@@ -153,9 +161,19 @@ automation:
                   target: { entity_id: input_boolean.svetomuzyka }
       - action: script.turn_off
         target: { entity_id: script.light_music_show }
-      - delay: 1   # дать z2m дослать очередь
-      - action: scene.turn_on
-        target: { entity_id: scene.light_music_before }
+      # Two passes: lamp 1 has a weak link and drops unicasts under load;
+      # a groupcast off reaches it.
+      - repeat:
+          count: 2
+          sequence:
+            - delay: 2
+            - if: "{{ was_off }}"
+              then:
+                - action: light.turn_off
+                  target: { entity_id: "{{ target }}" }
+              else:
+                - action: scene.turn_on
+                  target: { entity_id: scene.light_music_before }
 
 script:
   light_music_show:
