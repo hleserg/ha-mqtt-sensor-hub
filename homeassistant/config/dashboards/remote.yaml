@@ -1,0 +1,100 @@
+# =============================================================================
+#  Пульт Mi TV Stick (интеграция Android TV Remote, remote.tv_pristavka_mi_tv_stick)
+# =============================================================================
+#  Кнопка = remote.send_command с кодом клавиши Android TV. Удержание OK —
+#  долгое нажатие (меню приложения). Громкость стик передаёт телевизору по CEC.
+#  Клавиатуры здесь нет — для поиска текстом приложение Google TV на телефоне.
+# =============================================================================
+
+title: Пульт
+
+views:
+  - title: Пульт
+    path: tv
+    icon: mdi:remote-tv
+    cards:
+      - type: media-control
+        entity: media_player.tv_pristavka_mi_tv_stick_2
+
+      - type: grid
+        columns: 3
+        square: false
+        cards:
+          - &key
+            type: button
+            name: Назад
+            icon: mdi:arrow-left-circle
+            tap_action: &send
+              action: perform-action
+              perform_action: remote.send_command
+              target: { entity_id: remote.tv_pristavka_mi_tv_stick }
+              data: { command: BACK }
+          - <<: *key
+            name: " "
+            icon: mdi:chevron-up
+            tap_action: { <<: *send, data: { command: DPAD_UP } }
+          - <<: *key
+            name: Домой
+            icon: mdi:home
+            tap_action: { <<: *send, data: { command: HOME } }
+
+          - <<: *key
+            name: " "
+            icon: mdi:chevron-left
+            tap_action: { <<: *send, data: { command: DPAD_LEFT } }
+          - <<: *key
+            name: OK
+            icon: mdi:circle-medium
+            tap_action: { <<: *send, data: { command: DPAD_CENTER } }
+            hold_action: { <<: *send, data: { command: DPAD_CENTER, hold_secs: 1 } }
+          - <<: *key
+            name: " "
+            icon: mdi:chevron-right
+            tap_action: { <<: *send, data: { command: DPAD_RIGHT } }
+
+          - <<: *key
+            name: Тише
+            icon: mdi:volume-minus
+            tap_action: { <<: *send, data: { command: VOLUME_DOWN } }
+          - <<: *key
+            name: " "
+            icon: mdi:chevron-down
+            tap_action: { <<: *send, data: { command: DPAD_DOWN } }
+          - <<: *key
+            name: Громче
+            icon: mdi:volume-plus
+            tap_action: { <<: *send, data: { command: VOLUME_UP } }
+
+          - <<: *key
+            name: Питание
+            icon: mdi:power
+            tap_action: { <<: *send, data: { command: POWER } }
+          - <<: *key
+            name: Без звука
+            icon: mdi:volume-off
+            tap_action: { <<: *send, data: { command: VOLUME_MUTE } }
+          - <<: *key
+            name: Пауза
+            icon: mdi:play-pause
+            tap_action: { <<: *send, data: { command: MEDIA_PLAY_PAUSE } }
+
+          - <<: *key
+            name: YouTube
+            icon: mdi:youtube
+            tap_action:
+              action: perform-action
+              perform_action: remote.turn_on
+              target: { entity_id: remote.tv_pristavka_mi_tv_stick }
+              data: { activity: com.google.android.youtube.tv }
+          - <<: *key
+            name: Lampa
+            icon: mdi:movie-open
+            tap_action:
+              action: perform-action
+              perform_action: remote.turn_on
+              target: { entity_id: remote.tv_pristavka_mi_tv_stick }
+              data: { activity: top.rootu.lampa }
+          - <<: *key
+            name: Меню
+            icon: mdi:menu
+            tap_action: { <<: *send, data: { command: MENU } }
