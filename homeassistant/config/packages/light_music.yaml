@@ -264,7 +264,8 @@ script:
                           transition: "{{ (period / 2) | round(2) if style != 'energy' else 0 }}"
             # The PC backlight fades itself between beats (tools/pc_rgb_fader.py):
             # HA's OpenRGB call takes 0.6 s and can't keep the beat. It gets
-            # «hue sat bright period», a colour of its own each beat.
+            # «hue sat bright period», a colour of its own each beat. Brighter
+            # than the lamps (owner: «можно поярче»).
             - if: "{{ pc | default(false) }}"
               then:
                 - action: mqtt.publish
@@ -273,7 +274,7 @@ script:
                     payload: >-
                       {{ hues[(i * (1 if style == 'calm' else 3)) % hues | count] }}
                       {{ 70 if style == 'calm' else 100 }}
-                      {{ [100, ((50 if style == 'calm' else 70 if style == 'mid' else 85) * dim) | round(0) | int] | min }}
+                      {{ [100, ((75 if style == 'calm' else 100) * dim * 1.4) | round(0) | int] | min }}
                       {{ period }}
             - delay:
                 milliseconds: "{{ (period | float * 1000) | int }}"

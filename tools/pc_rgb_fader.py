@@ -28,7 +28,7 @@ RGB_HOST = os.environ.get("OPENRGB_HOST", "192.168.1.10")   # bigpc
 DEVICE = os.environ.get("OPENRGB_DEVICE", "MSI")            # подстрока имени платы
 FPS = 30
 GLIDE = 0.5    # доля такта на переход цвета
-FLOOR = 0.45   # к концу такта яркость падает до этой доли вспышки
+FLOOR = 0.55   # к концу такта яркость падает до этой доли вспышки
 
 beat = {"t": 0.0, "h0": 0.0, "h1": 0.0, "s": 1.0, "b": 0.0, "p": 1.0}
 shown = {"h": 0.0}
@@ -132,7 +132,7 @@ def selftest():
     h, s, v = frame(b, 10.25)
     assert round(h) == 10, h                                         # через 0, а не через 180
     h, s, v = frame(b, 11.5)
-    assert (round(h), round(v, 2)) == (30, 0.36), (h, v)             # такт кончился — держит пол
+    assert (round(h), round(v, 2)) == (30, 0.44), (h, v)             # такт кончился — держит пол
     assert frame(b, 13.1) is None and frame(dict(b, t=0.0), 10.0) is None
     print("selftest ok")
 
