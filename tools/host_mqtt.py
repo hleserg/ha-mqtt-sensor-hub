@@ -2,7 +2,7 @@
 """Состояние компьютера -> MQTT (own/<id>/<metric>, MQTT.md §14).
 
 Один файл на все машины стека: Linux (systemd), macOS (LaunchAgent), Windows
-(Планировщик). Чего на машине нет (vcgencmd, UPS BetaPi, датчики температуры
+(Планировщик). Чего на машине нет (vcgencmd, UPS BetaPi, nvidia-smi, датчики температуры
 на mac/Windows) — просто не публикуется.
 
 Настройки — переменные окружения или файл KEY=VALUE первым аргументом
@@ -58,6 +58,25 @@ def parse_throttled(out):
     return int(out.split("=")[1], 16) if "=" in out else None
 
 
+def parse_nvidia(out):
+    # "1, 1962, 16303, 53, 25.44" -- первая видеокарта
+    try:
+        util, used, total, temp, power = (float(x) for x in out.splitlines()[0].split(","))
+    except (IndexError, ValueError):
+        return {}
+    return {"gpu_used_pct": util, "gpu_mem_used_pct": round(100 * used / total, 1),
+            "gpu_temp": temp, "gpu_power_w": round(power, 1)}
+
+
+def nvidia():
+    try:
+        return parse_nvidia(subprocess.run(
+            ["nvidia-smi", "--query-gpu=utilization.gpu,memory.used,memory.total,temperature.gpu,power.draw",
+             "--format=csv,noheader,nounits"], capture_output=True, text=True, timeout=5).stdout)
+    except (OSError, subprocess.TimeoutExpired):
+        return {}
+
+
 def ups(now):
     """ac_ok/battery_* из файла x1202-guard (BetaPi); устаревший файл = данных нет."""
     try:
@@ -82,6 +101,7 @@ def collect():
     }
     m.update(temps())
     m.update(ups(time.time()))
+    m.update(nvidia())
     return {k: v for k, v in m.items() if v is not None}
 
 
@@ -90,6 +110,9 @@ def selftest():
     assert parse_ext5v("") is None
     assert parse_throttled("throttled=0x50005\n") == 0x50005
     assert parse_throttled("") is None
+    assert parse_nvidia("1, 1962, 16303, 53, 25.44\n") == {
+        "gpu_used_pct": 1, "gpu_mem_used_pct": 12.0, "gpu_temp": 53, "gpu_power_w": 25.4}
+    assert parse_nvidia("") == {} and parse_nvidia("[N/A], 1, 2, 3, 4") == {}
     global UPS_STATE
     UPS_STATE = "/nonexistent"
     assert ups(time.time()) == {}

@@ -696,6 +696,7 @@ Entities and Alice alerts: `homeassistant/config/packages/betapi.yaml` and
 | `ext5v_voltage` | V | Raspberry Pi |
 | `throttled` | integer, `vcgencmd get_throttled` bits | Raspberry Pi |
 | `ac_ok`, `battery_voltage`, `battery_pct` | `1`/`0`, V, % | BetaPi (X1202 UPS) |
+| `gpu_used_pct`, `gpu_mem_used_pct`, `gpu_temp`, `gpu_power_w` | %, %, °C, W | machines with `nvidia-smi` (bigpc), first GPU |
 
 `meta` carries `sensor_id`, `board` and `boot_time` (ISO UTC).
 

@@ -3,8 +3,8 @@
 # =============================================================================
 #  Данные шлёт tools/host_mqtt.py на каждой машине в own/<host>/<metric>
 #  (MQTT.md §14). BetaPi — тот же скрипт, но свой пакет betapi.yaml.
-#  Температур нет на bigpc и mac-mini: без LibreHardwareMonitor / root-доступа
-#  к powermetrics их не достать.
+#  Температур CPU нет на bigpc и mac-mini: без LibreHardwareMonitor / root-доступа
+#  к powermetrics их не достать. Видеокарта bigpc (NVIDIA) — через nvidia-smi.
 #  Диск doctor уже меряет monitoring.yaml (sensor.doctor_disk_used_percent) —
 #  здесь не дублируется.
 #
@@ -298,6 +298,64 @@ mqtt:
       name: bigpc
       model: Windows 10
     device_class: data_size
+  - name: bigpc загрузка видеокарты
+    unique_id: bigpc_gpu_used_pct
+    default_entity_id: sensor.bigpc_gpu_used_pct
+    state_topic: own/bigpc/gpu_used_pct
+    unit_of_measurement: '%'
+    state_class: measurement
+    icon: mdi:expansion-card
+    availability_topic: own/bigpc/status
+    expire_after: 180
+    device:
+      identifiers:
+      - own_bigpc
+      name: bigpc
+      model: Windows 10
+  - name: bigpc видеопамять занята
+    unique_id: bigpc_gpu_mem_used_pct
+    default_entity_id: sensor.bigpc_gpu_mem_used_pct
+    state_topic: own/bigpc/gpu_mem_used_pct
+    unit_of_measurement: '%'
+    state_class: measurement
+    icon: mdi:memory
+    availability_topic: own/bigpc/status
+    expire_after: 180
+    device:
+      identifiers:
+      - own_bigpc
+      name: bigpc
+      model: Windows 10
+  - name: bigpc температура видеокарты
+    unique_id: bigpc_gpu_temp
+    default_entity_id: sensor.bigpc_gpu_temp
+    state_topic: own/bigpc/gpu_temp
+    unit_of_measurement: '°C'
+    state_class: measurement
+    icon: mdi:thermometer
+    availability_topic: own/bigpc/status
+    expire_after: 180
+    device:
+      identifiers:
+      - own_bigpc
+      name: bigpc
+      model: Windows 10
+    device_class: temperature
+  - name: bigpc видеокарта потребляет
+    unique_id: bigpc_gpu_power_w
+    default_entity_id: sensor.bigpc_gpu_power_w
+    state_topic: own/bigpc/gpu_power_w
+    unit_of_measurement: 'W'
+    state_class: measurement
+    icon: mdi:flash
+    availability_topic: own/bigpc/status
+    expire_after: 180
+    device:
+      identifiers:
+      - own_bigpc
+      name: bigpc
+      model: Windows 10
+    device_class: power
   - name: bigpc включён с
     unique_id: bigpc_boot_time
     default_entity_id: sensor.bigpc_boot_time
