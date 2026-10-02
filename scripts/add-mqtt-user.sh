@@ -11,7 +11,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 STACK_DIR="$PWD"
 USERNAME="${1:?usage: add-mqtt-user.sh <username> [password]}"
-PASSWORD="${2:-$(tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 28)}"
+PASSWORD="${2:-$(set +o pipefail; tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 28)}"  # без +pipefail tr ловит SIGPIPE от head и скрипт молча падает
 MOSQ_IMAGE="eclipse-mosquitto:2.0.22"
 
 docker run --rm --user root \

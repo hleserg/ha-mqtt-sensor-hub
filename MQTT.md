@@ -669,6 +669,36 @@ Rename a sensor in the YAML and the topic moves. Per-entity `state_topic:`
 overrides cost four lines and remove both problems — see
 `esphome/own-sensor-reference.yaml`.
 
+### Host metrics (`own/<host>/…`)
+
+Every computer reports on itself through the same layout, with one publisher
+for all of them: `tools/host_mqtt.py` (paho-mqtt + psutil; settings from the
+environment or a KEY=VALUE file, see `tools/host-mqtt.env.example`). The
+broker account is the host name; a metric the machine cannot measure is simply
+not published.
+
+| Host | Installed as | Settings |
+|---|---|---|
+| betapi | `/usr/local/bin/host-mqtt`, unit `betapi-mqtt.service` | `/etc/default/betapi-mqtt` |
+| doctor, mc-server | `/usr/local/bin/host-mqtt`, unit `tools/host-mqtt.service` | `/etc/default/host-mqtt` |
+| mac-mini | `~/.local/bin/host-mqtt`, LaunchAgent `local.host-mqtt` (`user/501`, `LimitLoadToSessionType` Aqua+Background — nobody is logged in to the GUI, so after a reboot it does **not** start until `launchctl bootstrap user/501 ~/Library/LaunchAgents/local.host-mqtt.plist` over ssh; 2026-10-01 it was silent for a day this way) | `~/.config/host-mqtt.env` |
+| bigpc (Windows) | `C:\ProgramData\host-mqtt\host_mqtt.py`, Task Scheduler task `host-mqtt` (SYSTEM, at startup) | `host-mqtt.env` next to it, ACL SYSTEM + Administrators |
+
+Entities and Alice alerts: `homeassistant/config/packages/betapi.yaml` and
+`hosts.yaml`.
+
+| Metric | Unit | Where |
+|---|---|---|
+| `cpu_used_pct`, `disk_used_pct`, `ram_used_pct` | % | all (`disk_used_pct` as `df`, root reserve excluded) |
+| `disk_free_gb` | GB | all |
+| `load_1m` | — | all but Windows |
+| `cpu_temperature`, `nvme_temperature` | °C | Linux only (hwmon `cpu_thermal`/`coretemp`/`k10temp`, `nvme`) |
+| `ext5v_voltage` | V | Raspberry Pi |
+| `throttled` | integer, `vcgencmd get_throttled` bits | Raspberry Pi |
+| `ac_ok`, `battery_voltage`, `battery_pct` | `1`/`0`, V, % | BetaPi (X1202 UPS) |
+
+`meta` carries `sensor_id`, `board` and `boot_time` (ISO UTC).
+
 ### One account per sensor, enforced by a pattern rule
 
 Each sensor gets a broker account named exactly as its `<sensor_id>`, and a

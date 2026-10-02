@@ -1,0 +1,239 @@
+# =============================================================================
+#  BetaPi — Raspberry Pi 5 с NVMe и UPS X1202
+# =============================================================================
+#  Данные шлёт tools/host_mqtt.py (служба betapi-mqtt) в own/betapi/<metric> (MQTT.md §14),
+#  UPS — через файл службы x1202-guard. Настройки публикатора:
+#  /etc/default/betapi-mqtt на BetaPi.
+#
+#  Алерты — template event (device_class button, как у лисёнка): их видит
+#  yandex_smart_home, а в сценарии Алисы «когда нажата кнопка X — скажи Y».
+#  Пороги алертов — здесь, в триггерах ниже.
+# =============================================================================
+mqtt:
+  binary_sensor:
+    - name: "BetaPi онлайн"
+      unique_id: betapi_online
+      default_entity_id: binary_sensor.betapi_online
+      state_topic: "own/betapi/status"
+      payload_on: "online"
+      payload_off: "offline"
+      device_class: connectivity
+      device: &betapi
+        identifiers: ["own_betapi"]
+        name: "BetaPi"
+        manufacturer: "Raspberry Pi"
+        model: "Pi 5 + X1001-MAX + X1202"
+    - name: "BetaPi питание от сети"
+      unique_id: betapi_ac_ok
+      default_entity_id: binary_sensor.betapi_ac_ok
+      state_topic: "own/betapi/ac_ok"
+      payload_on: "1"
+      payload_off: "0"
+      device_class: power
+      availability_topic: "own/betapi/status"
+      expire_after: 180
+      device: *betapi
+    # get_throttled бит 0 — недонапряжение прямо сейчас
+    - name: "BetaPi недонапряжение"
+      unique_id: betapi_undervoltage
+      default_entity_id: binary_sensor.betapi_undervoltage
+      state_topic: "own/betapi/throttled"
+      value_template: "{{ 'ON' if value | int(0) is odd else 'OFF' }}"
+      device_class: problem
+      availability_topic: "own/betapi/status"
+      expire_after: 180
+      device: *betapi
+  sensor:
+    - name: "BetaPi батарея"
+      unique_id: betapi_battery_pct
+      default_entity_id: sensor.betapi_battery_pct
+      state_topic: "own/betapi/battery_pct"
+      unit_of_measurement: "%"
+      device_class: battery
+      state_class: measurement
+      availability_topic: "own/betapi/status"
+      expire_after: 180
+      device: *betapi
+    - name: "BetaPi напряжение батареи"
+      unique_id: betapi_battery_voltage
+      default_entity_id: sensor.betapi_battery_voltage
+      state_topic: "own/betapi/battery_voltage"
+      unit_of_measurement: "V"
+      device_class: voltage
+      state_class: measurement
+      availability_topic: "own/betapi/status"
+      expire_after: 180
+      device: *betapi
+    - name: "BetaPi температура CPU"
+      unique_id: betapi_cpu_temperature
+      default_entity_id: sensor.betapi_cpu_temperature
+      state_topic: "own/betapi/cpu_temperature"
+      unit_of_measurement: "°C"
+      device_class: temperature
+      state_class: measurement
+      availability_topic: "own/betapi/status"
+      expire_after: 180
+      device: *betapi
+    - name: "BetaPi температура NVMe"
+      unique_id: betapi_nvme_temperature
+      default_entity_id: sensor.betapi_nvme_temperature
+      state_topic: "own/betapi/nvme_temperature"
+      unit_of_measurement: "°C"
+      device_class: temperature
+      state_class: measurement
+      availability_topic: "own/betapi/status"
+      expire_after: 180
+      device: *betapi
+    - name: "BetaPi диск занят"
+      unique_id: betapi_disk_used_pct
+      default_entity_id: sensor.betapi_disk_used_pct
+      state_topic: "own/betapi/disk_used_pct"
+      unit_of_measurement: "%"
+      state_class: measurement
+      icon: mdi:harddisk
+      availability_topic: "own/betapi/status"
+      expire_after: 180
+      device: *betapi
+    - name: "BetaPi диск свободно"
+      unique_id: betapi_disk_free_gb
+      default_entity_id: sensor.betapi_disk_free_gb
+      state_topic: "own/betapi/disk_free_gb"
+      unit_of_measurement: "GB"
+      device_class: data_size
+      state_class: measurement
+      availability_topic: "own/betapi/status"
+      expire_after: 180
+      device: *betapi
+    - name: "BetaPi память занята"
+      unique_id: betapi_ram_used_pct
+      default_entity_id: sensor.betapi_ram_used_pct
+      state_topic: "own/betapi/ram_used_pct"
+      unit_of_measurement: "%"
+      state_class: measurement
+      icon: mdi:memory
+      availability_topic: "own/betapi/status"
+      expire_after: 180
+      device: *betapi
+    - name: "BetaPi нагрузка"
+      unique_id: betapi_load_1m
+      default_entity_id: sensor.betapi_load_1m
+      state_topic: "own/betapi/load_1m"
+      state_class: measurement
+      icon: mdi:chip
+      availability_topic: "own/betapi/status"
+      expire_after: 180
+      device: *betapi
+    - name: "BetaPi питание 5V"
+      unique_id: betapi_ext5v_voltage
+      default_entity_id: sensor.betapi_ext5v_voltage
+      state_topic: "own/betapi/ext5v_voltage"
+      unit_of_measurement: "V"
+      device_class: voltage
+      state_class: measurement
+      entity_category: diagnostic
+      availability_topic: "own/betapi/status"
+      expire_after: 180
+      device: *betapi
+    - name: "BetaPi throttled"
+      unique_id: betapi_throttled
+      default_entity_id: sensor.betapi_throttled
+      state_topic: "own/betapi/throttled"
+      value_template: "{{ '0x%x' % (value | int(0)) }}"
+      entity_category: diagnostic
+      availability_topic: "own/betapi/status"
+      expire_after: 180
+      device: *betapi
+    - name: "BetaPi включена с"
+      unique_id: betapi_boot_time
+      default_entity_id: sensor.betapi_boot_time
+      state_topic: "own/betapi/meta"
+      value_template: "{{ value_json.boot_time }}"
+      device_class: timestamp
+      entity_category: diagnostic
+      device: *betapi
+    - name: "BetaPi последние данные"
+      unique_id: betapi_last_update
+      default_entity_id: sensor.betapi_last_update
+      state_topic: "own/betapi/last_update"
+      device_class: timestamp
+      entity_category: diagnostic
+      device: *betapi
+
+# Алерты. Каждый — отдельная «кнопка» для своего сценария Алисы.
+# Условие from_state != unavailable/unknown — чтобы рестарт HA или публикатора
+# не будил Алису.
+template:
+  - triggers:
+      - trigger: state
+        entity_id: binary_sensor.betapi_ac_ok
+        from: "on"
+        to: "off"
+        for: {seconds: 30}
+    event:
+      - name: "BetaPi: пропала сеть"
+        unique_id: betapi_alert_power_lost
+        default_entity_id: event.betapi_alert_power_lost
+        device_class: button
+        event_types: "{{ ['click'] }}"
+        event_type: "click"
+  - triggers:
+      - trigger: numeric_state
+        entity_id: sensor.betapi_battery_pct
+        below: 30
+    conditions:
+      - "{{ trigger.from_state.state not in ['unavailable', 'unknown'] }}"
+      - "{{ is_state('binary_sensor.betapi_ac_ok', 'off') }}"
+    event:
+      - name: "BetaPi: батарея садится"
+        unique_id: betapi_alert_battery_low
+        default_entity_id: event.betapi_alert_battery_low
+        device_class: button
+        event_types: "{{ ['click'] }}"
+        event_type: "click"
+  - triggers:
+      - trigger: numeric_state
+        entity_id: sensor.betapi_disk_used_pct
+        above: 90
+        for: {minutes: 10}
+    conditions:
+      - "{{ trigger.from_state.state not in ['unavailable', 'unknown'] }}"
+    event:
+      - name: "BetaPi: кончается место"
+        unique_id: betapi_alert_disk_full
+        default_entity_id: event.betapi_alert_disk_full
+        device_class: button
+        event_types: "{{ ['click'] }}"
+        event_type: "click"
+  # Pi 5 сам режет частоту с 85 °C; NVMe KC3000 — предупреждение с ~80 °C
+  - triggers:
+      - trigger: numeric_state
+        entity_id: sensor.betapi_cpu_temperature
+        above: 80
+        for: {minutes: 2}
+      - trigger: numeric_state
+        entity_id: sensor.betapi_nvme_temperature
+        above: 70
+        for: {minutes: 2}
+    conditions:
+      - "{{ trigger.from_state.state not in ['unavailable', 'unknown'] }}"
+    event:
+      - name: "BetaPi: перегрев"
+        unique_id: betapi_alert_overheat
+        default_entity_id: event.betapi_alert_overheat
+        device_class: button
+        event_types: "{{ ['click'] }}"
+        event_type: "click"
+  # Ребут занимает ~1 мин, поэтому 3 минуты
+  - triggers:
+      - trigger: state
+        entity_id: binary_sensor.betapi_online
+        from: "on"
+        to: "off"
+        for: {minutes: 3}
+    event:
+      - name: "BetaPi: пропала из сети"
+        unique_id: betapi_alert_offline
+        default_entity_id: event.betapi_alert_offline
+        device_class: button
+        event_types: "{{ ['click'] }}"
+        event_type: "click"

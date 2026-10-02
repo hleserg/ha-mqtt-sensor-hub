@@ -1,0 +1,544 @@
+# =============================================================================
+#  Компьютеры стека: doctor, mc-server, bigpc (Windows), mac-mini (macOS)
+# =============================================================================
+#  Данные шлёт tools/host_mqtt.py на каждой машине в own/<host>/<metric>
+#  (MQTT.md §14). BetaPi — тот же скрипт, но свой пакет betapi.yaml.
+#  Температур нет на bigpc и mac-mini: без LibreHardwareMonitor / root-доступа
+#  к powermetrics их не достать.
+#  Диск doctor уже меряет monitoring.yaml (sensor.doctor_disk_used_percent) —
+#  здесь не дублируется.
+#
+#  Алерты — template event (device_class button), как в betapi.yaml: их видит
+#  yandex_smart_home, сценарий Алисы «когда нажата кнопка X — скажи Y».
+#  Пороги — в триггерах ниже.
+# =============================================================================
+mqtt:
+  binary_sensor:
+  - name: doctor онлайн
+    unique_id: doctor_online
+    default_entity_id: binary_sensor.doctor_online
+    state_topic: own/doctor/status
+    payload_on: online
+    payload_off: offline
+    device_class: connectivity
+    device:
+      identifiers:
+      - own_doctor
+      name: doctor
+      model: HA / iot-stack, Ubuntu 24.04
+  - name: mc-server онлайн
+    unique_id: mc_server_online
+    default_entity_id: binary_sensor.mc_server_online
+    state_topic: own/mc-server/status
+    payload_on: online
+    payload_off: offline
+    device_class: connectivity
+    device:
+      identifiers:
+      - own_mc_server
+      name: mc-server
+      model: Ubuntu 24.04
+  - name: bigpc онлайн
+    unique_id: bigpc_online
+    default_entity_id: binary_sensor.bigpc_online
+    state_topic: own/bigpc/status
+    payload_on: online
+    payload_off: offline
+    device_class: connectivity
+    device:
+      identifiers:
+      - own_bigpc
+      name: bigpc
+      model: Windows 10
+  - name: mac-mini онлайн
+    unique_id: mac_mini_online
+    default_entity_id: binary_sensor.mac_mini_online
+    state_topic: own/mac-mini/status
+    payload_on: online
+    payload_off: offline
+    device_class: connectivity
+    device:
+      identifiers:
+      - own_mac_mini
+      name: mac-mini
+      model: Mac mini M1, macOS 15
+  sensor:
+  - name: doctor загрузка CPU
+    unique_id: doctor_cpu_used_pct
+    default_entity_id: sensor.doctor_cpu_used_pct
+    state_topic: own/doctor/cpu_used_pct
+    unit_of_measurement: '%'
+    state_class: measurement
+    icon: mdi:chip
+    availability_topic: own/doctor/status
+    expire_after: 180
+    device:
+      identifiers:
+      - own_doctor
+      name: doctor
+      model: HA / iot-stack, Ubuntu 24.04
+  - name: doctor память занята
+    unique_id: doctor_ram_used_pct
+    default_entity_id: sensor.doctor_ram_used_pct
+    state_topic: own/doctor/ram_used_pct
+    unit_of_measurement: '%'
+    state_class: measurement
+    icon: mdi:memory
+    availability_topic: own/doctor/status
+    expire_after: 180
+    device:
+      identifiers:
+      - own_doctor
+      name: doctor
+      model: HA / iot-stack, Ubuntu 24.04
+  - name: doctor температура CPU
+    unique_id: doctor_cpu_temperature
+    default_entity_id: sensor.doctor_cpu_temperature
+    state_topic: own/doctor/cpu_temperature
+    unit_of_measurement: °C
+    state_class: measurement
+    icon: mdi:thermometer
+    availability_topic: own/doctor/status
+    expire_after: 180
+    device:
+      identifiers:
+      - own_doctor
+      name: doctor
+      model: HA / iot-stack, Ubuntu 24.04
+    device_class: temperature
+  - name: doctor включён с
+    unique_id: doctor_boot_time
+    default_entity_id: sensor.doctor_boot_time
+    state_topic: own/doctor/meta
+    value_template: '{{ value_json.boot_time }}'
+    device_class: timestamp
+    entity_category: diagnostic
+    device:
+      identifiers:
+      - own_doctor
+      name: doctor
+      model: HA / iot-stack, Ubuntu 24.04
+  - name: doctor последние данные
+    unique_id: doctor_last_update
+    default_entity_id: sensor.doctor_last_update
+    state_topic: own/doctor/last_update
+    value_template: '{{ value }}'
+    device_class: timestamp
+    entity_category: diagnostic
+    device:
+      identifiers:
+      - own_doctor
+      name: doctor
+      model: HA / iot-stack, Ubuntu 24.04
+  - name: mc-server загрузка CPU
+    unique_id: mc_server_cpu_used_pct
+    default_entity_id: sensor.mc_server_cpu_used_pct
+    state_topic: own/mc-server/cpu_used_pct
+    unit_of_measurement: '%'
+    state_class: measurement
+    icon: mdi:chip
+    availability_topic: own/mc-server/status
+    expire_after: 180
+    device:
+      identifiers:
+      - own_mc_server
+      name: mc-server
+      model: Ubuntu 24.04
+  - name: mc-server память занята
+    unique_id: mc_server_ram_used_pct
+    default_entity_id: sensor.mc_server_ram_used_pct
+    state_topic: own/mc-server/ram_used_pct
+    unit_of_measurement: '%'
+    state_class: measurement
+    icon: mdi:memory
+    availability_topic: own/mc-server/status
+    expire_after: 180
+    device:
+      identifiers:
+      - own_mc_server
+      name: mc-server
+      model: Ubuntu 24.04
+  - name: mc-server температура CPU
+    unique_id: mc_server_cpu_temperature
+    default_entity_id: sensor.mc_server_cpu_temperature
+    state_topic: own/mc-server/cpu_temperature
+    unit_of_measurement: °C
+    state_class: measurement
+    icon: mdi:thermometer
+    availability_topic: own/mc-server/status
+    expire_after: 180
+    device:
+      identifiers:
+      - own_mc_server
+      name: mc-server
+      model: Ubuntu 24.04
+    device_class: temperature
+  - name: mc-server температура NVMe
+    unique_id: mc_server_nvme_temperature
+    default_entity_id: sensor.mc_server_nvme_temperature
+    state_topic: own/mc-server/nvme_temperature
+    unit_of_measurement: °C
+    state_class: measurement
+    icon: mdi:thermometer
+    availability_topic: own/mc-server/status
+    expire_after: 180
+    device:
+      identifiers:
+      - own_mc_server
+      name: mc-server
+      model: Ubuntu 24.04
+    device_class: temperature
+  - name: mc-server диск занят
+    unique_id: mc_server_disk_used_pct
+    default_entity_id: sensor.mc_server_disk_used_pct
+    state_topic: own/mc-server/disk_used_pct
+    unit_of_measurement: '%'
+    state_class: measurement
+    icon: mdi:harddisk
+    availability_topic: own/mc-server/status
+    expire_after: 180
+    device:
+      identifiers:
+      - own_mc_server
+      name: mc-server
+      model: Ubuntu 24.04
+  - name: mc-server диск свободно
+    unique_id: mc_server_disk_free_gb
+    default_entity_id: sensor.mc_server_disk_free_gb
+    state_topic: own/mc-server/disk_free_gb
+    unit_of_measurement: GB
+    state_class: measurement
+    icon: mdi:chip
+    availability_topic: own/mc-server/status
+    expire_after: 180
+    device:
+      identifiers:
+      - own_mc_server
+      name: mc-server
+      model: Ubuntu 24.04
+    device_class: data_size
+  - name: mc-server включён с
+    unique_id: mc_server_boot_time
+    default_entity_id: sensor.mc_server_boot_time
+    state_topic: own/mc-server/meta
+    value_template: '{{ value_json.boot_time }}'
+    device_class: timestamp
+    entity_category: diagnostic
+    device:
+      identifiers:
+      - own_mc_server
+      name: mc-server
+      model: Ubuntu 24.04
+  - name: mc-server последние данные
+    unique_id: mc_server_last_update
+    default_entity_id: sensor.mc_server_last_update
+    state_topic: own/mc-server/last_update
+    value_template: '{{ value }}'
+    device_class: timestamp
+    entity_category: diagnostic
+    device:
+      identifiers:
+      - own_mc_server
+      name: mc-server
+      model: Ubuntu 24.04
+  - name: bigpc загрузка CPU
+    unique_id: bigpc_cpu_used_pct
+    default_entity_id: sensor.bigpc_cpu_used_pct
+    state_topic: own/bigpc/cpu_used_pct
+    unit_of_measurement: '%'
+    state_class: measurement
+    icon: mdi:chip
+    availability_topic: own/bigpc/status
+    expire_after: 180
+    device:
+      identifiers:
+      - own_bigpc
+      name: bigpc
+      model: Windows 10
+  - name: bigpc память занята
+    unique_id: bigpc_ram_used_pct
+    default_entity_id: sensor.bigpc_ram_used_pct
+    state_topic: own/bigpc/ram_used_pct
+    unit_of_measurement: '%'
+    state_class: measurement
+    icon: mdi:memory
+    availability_topic: own/bigpc/status
+    expire_after: 180
+    device:
+      identifiers:
+      - own_bigpc
+      name: bigpc
+      model: Windows 10
+  - name: 'bigpc диск C: занят'
+    unique_id: bigpc_disk_used_pct
+    default_entity_id: sensor.bigpc_disk_used_pct
+    state_topic: own/bigpc/disk_used_pct
+    unit_of_measurement: '%'
+    state_class: measurement
+    icon: mdi:harddisk
+    availability_topic: own/bigpc/status
+    expire_after: 180
+    device:
+      identifiers:
+      - own_bigpc
+      name: bigpc
+      model: Windows 10
+  - name: 'bigpc диск C: свободно'
+    unique_id: bigpc_disk_free_gb
+    default_entity_id: sensor.bigpc_disk_free_gb
+    state_topic: own/bigpc/disk_free_gb
+    unit_of_measurement: GB
+    state_class: measurement
+    icon: mdi:harddisk
+    availability_topic: own/bigpc/status
+    expire_after: 180
+    device:
+      identifiers:
+      - own_bigpc
+      name: bigpc
+      model: Windows 10
+    device_class: data_size
+  - name: bigpc включён с
+    unique_id: bigpc_boot_time
+    default_entity_id: sensor.bigpc_boot_time
+    state_topic: own/bigpc/meta
+    value_template: '{{ value_json.boot_time }}'
+    device_class: timestamp
+    entity_category: diagnostic
+    device:
+      identifiers:
+      - own_bigpc
+      name: bigpc
+      model: Windows 10
+  - name: bigpc последние данные
+    unique_id: bigpc_last_update
+    default_entity_id: sensor.bigpc_last_update
+    state_topic: own/bigpc/last_update
+    value_template: '{{ value }}'
+    device_class: timestamp
+    entity_category: diagnostic
+    device:
+      identifiers:
+      - own_bigpc
+      name: bigpc
+      model: Windows 10
+  - name: mac-mini загрузка CPU
+    unique_id: mac_mini_cpu_used_pct
+    default_entity_id: sensor.mac_mini_cpu_used_pct
+    state_topic: own/mac-mini/cpu_used_pct
+    unit_of_measurement: '%'
+    state_class: measurement
+    icon: mdi:chip
+    availability_topic: own/mac-mini/status
+    expire_after: 180
+    device:
+      identifiers:
+      - own_mac_mini
+      name: mac-mini
+      model: Mac mini M1, macOS 15
+  - name: mac-mini память занята
+    unique_id: mac_mini_ram_used_pct
+    default_entity_id: sensor.mac_mini_ram_used_pct
+    state_topic: own/mac-mini/ram_used_pct
+    unit_of_measurement: '%'
+    state_class: measurement
+    icon: mdi:memory
+    availability_topic: own/mac-mini/status
+    expire_after: 180
+    device:
+      identifiers:
+      - own_mac_mini
+      name: mac-mini
+      model: Mac mini M1, macOS 15
+  - name: mac-mini диск занят
+    unique_id: mac_mini_disk_used_pct
+    default_entity_id: sensor.mac_mini_disk_used_pct
+    state_topic: own/mac-mini/disk_used_pct
+    unit_of_measurement: '%'
+    state_class: measurement
+    icon: mdi:harddisk
+    availability_topic: own/mac-mini/status
+    expire_after: 180
+    device:
+      identifiers:
+      - own_mac_mini
+      name: mac-mini
+      model: Mac mini M1, macOS 15
+  - name: mac-mini диск свободно
+    unique_id: mac_mini_disk_free_gb
+    default_entity_id: sensor.mac_mini_disk_free_gb
+    state_topic: own/mac-mini/disk_free_gb
+    unit_of_measurement: GB
+    state_class: measurement
+    icon: mdi:harddisk
+    availability_topic: own/mac-mini/status
+    expire_after: 180
+    device:
+      identifiers:
+      - own_mac_mini
+      name: mac-mini
+      model: Mac mini M1, macOS 15
+    device_class: data_size
+  - name: mac-mini включён с
+    unique_id: mac_mini_boot_time
+    default_entity_id: sensor.mac_mini_boot_time
+    state_topic: own/mac-mini/meta
+    value_template: '{{ value_json.boot_time }}'
+    device_class: timestamp
+    entity_category: diagnostic
+    device:
+      identifiers:
+      - own_mac_mini
+      name: mac-mini
+      model: Mac mini M1, macOS 15
+  - name: mac-mini последние данные
+    unique_id: mac_mini_last_update
+    default_entity_id: sensor.mac_mini_last_update
+    state_topic: own/mac-mini/last_update
+    value_template: '{{ value }}'
+    device_class: timestamp
+    entity_category: diagnostic
+    device:
+      identifiers:
+      - own_mac_mini
+      name: mac-mini
+      model: Mac mini M1, macOS 15
+
+# Алерты. Каждый — отдельная «кнопка» для своего сценария Алисы.
+# from_state != unavailable/unknown — рестарт HA или публикатора не будит Алису.
+# «doctor пропал» не делаем: HA живёт на нём и упадёт вместе с ним.
+template:
+  # ---------------------------------------------------------- пропал из сети
+  # Ребут ~1–2 мин, поэтому 3 минуты; у mac-mini Wi-Fi моргает — 10.
+  - triggers:
+      - trigger: state
+        entity_id: binary_sensor.mc_server_online
+        from: "on"
+        to: "off"
+        for: {minutes: 3}
+    event:
+      - name: "mc-server: пропал из сети"
+        unique_id: mc_server_alert_offline
+        default_entity_id: event.mc_server_alert_offline
+        device_class: button
+        event_types: "{{ ['click'] }}"
+        event_type: "click"
+  - triggers:
+      - trigger: state
+        entity_id: binary_sensor.bigpc_online
+        from: "on"
+        to: "off"
+        for: {minutes: 3}
+    event:
+      - name: "bigpc: пропал из сети"
+        unique_id: bigpc_alert_offline
+        default_entity_id: event.bigpc_alert_offline
+        device_class: button
+        event_types: "{{ ['click'] }}"
+        event_type: "click"
+  - triggers:
+      - trigger: state
+        entity_id: binary_sensor.mac_mini_online
+        from: "on"
+        to: "off"
+        for: {minutes: 10}
+    event:
+      - name: "mac-mini: пропал из сети"
+        unique_id: mac_mini_alert_offline
+        default_entity_id: event.mac_mini_alert_offline
+        device_class: button
+        event_types: "{{ ['click'] }}"
+        event_type: "click"
+
+  # ------------------------------------------------------- кончается место
+  - triggers:
+      - trigger: numeric_state
+        entity_id: sensor.doctor_disk_used_percent
+        above: 90
+        for: {minutes: 10}
+    conditions:
+      - "{{ trigger.from_state.state not in ['unavailable', 'unknown'] }}"
+    event:
+      - name: "doctor: кончается место"
+        unique_id: doctor_alert_disk_full
+        default_entity_id: event.doctor_alert_disk_full
+        device_class: button
+        event_types: "{{ ['click'] }}"
+        event_type: "click"
+  - triggers:
+      - trigger: numeric_state
+        entity_id: sensor.mc_server_disk_used_pct
+        above: 90
+        for: {minutes: 10}
+    conditions:
+      - "{{ trigger.from_state.state not in ['unavailable', 'unknown'] }}"
+    event:
+      - name: "mc-server: кончается место"
+        unique_id: mc_server_alert_disk_full
+        default_entity_id: event.mc_server_alert_disk_full
+        device_class: button
+        event_types: "{{ ['click'] }}"
+        event_type: "click"
+  - triggers:
+      - trigger: numeric_state
+        entity_id: sensor.bigpc_disk_used_pct
+        above: 90
+        for: {minutes: 10}
+    conditions:
+      - "{{ trigger.from_state.state not in ['unavailable', 'unknown'] }}"
+    event:
+      - name: "bigpc: кончается место"
+        unique_id: bigpc_alert_disk_full
+        default_entity_id: event.bigpc_alert_disk_full
+        device_class: button
+        event_types: "{{ ['click'] }}"
+        event_type: "click"
+  - triggers:
+      - trigger: numeric_state
+        entity_id: sensor.mac_mini_disk_used_pct
+        above: 90
+        for: {minutes: 10}
+    conditions:
+      - "{{ trigger.from_state.state not in ['unavailable', 'unknown'] }}"
+    event:
+      - name: "mac-mini: кончается место"
+        unique_id: mac_mini_alert_disk_full
+        default_entity_id: event.mac_mini_alert_disk_full
+        device_class: button
+        event_types: "{{ ['click'] }}"
+        event_type: "click"
+
+  # --------------------------------------------------------------- перегрев
+  # Intel/AMD начинают сбрасывать частоту у ~95–100 °C, NVMe — с ~80 °C.
+  - triggers:
+      - trigger: numeric_state
+        entity_id: sensor.doctor_cpu_temperature
+        above: 85
+        for: {minutes: 5}
+    conditions:
+      - "{{ trigger.from_state.state not in ['unavailable', 'unknown'] }}"
+    event:
+      - name: "doctor: перегрев"
+        unique_id: doctor_alert_overheat
+        default_entity_id: event.doctor_alert_overheat
+        device_class: button
+        event_types: "{{ ['click'] }}"
+        event_type: "click"
+  - triggers:
+      - trigger: numeric_state
+        entity_id: sensor.mc_server_cpu_temperature
+        above: 85
+        for: {minutes: 5}
+      - trigger: numeric_state
+        entity_id: sensor.mc_server_nvme_temperature
+        above: 70
+        for: {minutes: 5}
+    conditions:
+      - "{{ trigger.from_state.state not in ['unavailable', 'unknown'] }}"
+    event:
+      - name: "mc-server: перегрев"
+        unique_id: mc_server_alert_overheat
+        default_entity_id: event.mc_server_alert_overheat
+        device_class: button
+        event_types: "{{ ['click'] }}"
+        event_type: "click"
