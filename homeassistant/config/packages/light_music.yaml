@@ -22,6 +22,9 @@ input_boolean:
   svetomuzyka:
     name: Светомузыка
     icon: mdi:music-circle
+    # Шоу-скрипт рестарт HA не переживает: восстановленное «вкл» ничего не мигает
+    # и глушит повторное «включи светомузыку».
+    initial: false
 
 # Темп по 30-секундному превью Deezer (у Deezer bpm почти везде 0), ~3 с.
 shell_command:
