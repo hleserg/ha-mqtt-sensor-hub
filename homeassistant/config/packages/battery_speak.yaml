@@ -1,0 +1,67 @@
+# =============================================================================
+#  Батарея садится — станции говорят «надо подзарядить, осталось N процентов»
+# =============================================================================
+#  Лисёнок (sensor.lisenok_zariad) и мобильник (sensor.mobilnik_battery_level_2;
+#  sensor.mobilnik_battery_level — старая регистрация того же телефона, молчит).
+#  Говорят, когда заряд опускается до 20, 15, 10 и 5 %. Заряд лисёнка считается
+#  по напряжению и скачет на ±2,3 %, поэтому одно устройство говорит не чаще
+#  раза в час. Ночью (00–08) молчат, как алерты компов в hosts.yaml.
+# =============================================================================
+
+automation:
+  - id: battery_speak_lisenok
+    alias: Батарея лисёнка — сказать голосом
+    triggers:
+      - trigger: state
+        entity_id: sensor.lisenok_zariad
+    conditions: &battery_conditions
+      - "{{ trigger.from_state is not none and is_number(trigger.from_state.state)
+            and is_number(trigger.to_state.state) }}"
+      # Crossed one of the thresholds on the way down.
+      - "{{ [20, 15, 10, 5] | select('ge', trigger.to_state.state | float)
+            | select('lt', trigger.from_state.state | float) | list | count > 0 }}"
+      - "{{ this.attributes.last_triggered is none
+            or now() - this.attributes.last_triggered > timedelta(hours=1) }}"
+      - "{{ now().hour >= 8 }}"
+    actions:
+      - action: script.battery_low_say
+        data:
+          who: Лисёнка
+          level: "{{ trigger.to_state.state | float | round(0) | int }}"
+
+  - id: battery_speak_mobilnik
+    alias: Батарея мобильника — сказать голосом
+    triggers:
+      - trigger: state
+        entity_id: sensor.mobilnik_battery_level_2
+    conditions: *battery_conditions
+    actions:
+      - action: script.battery_low_say
+        data:
+          who: Мобильник
+          level: "{{ trigger.to_state.state | int }}"
+
+script:
+  battery_low_say:
+    alias: Батарея — сказать, что пора заряжать
+    mode: queued
+    fields:
+      who:
+        description: Кого заряжать, в винительном падеже
+      level:
+        description: Сколько процентов осталось
+    variables:
+      unit: >-
+        {% set n = level | int %}
+        {{ 'процент' if n % 10 == 1 and n % 100 != 11
+           else 'процента' if n % 10 in [2, 3, 4] and n % 100 not in [12, 13, 14]
+           else 'процентов' }}
+    sequence:
+      - action: media_player.play_media
+        target:
+          entity_id:
+            - media_player.yandex_station_ff98f029d7407353fb617159
+            - media_player.yandex_station_lg0000000000001122190000a5c43d60
+        data:
+          media_content_type: text
+          media_content_id: "{{ who }} надо подзарядить, осталось {{ level }} {{ unit }}."
