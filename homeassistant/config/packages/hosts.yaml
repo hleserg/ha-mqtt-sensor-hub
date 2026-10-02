@@ -648,3 +648,46 @@ automation:
             data:
               media_content_type: text
               media_content_id: "Внимание. {{ text }}"
+
+  # Вернулся — тоже вслух, но только после озвученного «пропал»: алерт пропажи
+  # сработал позже, чем хост погас. Короткий ребут без алерта — молча.
+  - id: hosts_back_speak
+    alias: "Компы: снова в сети — голосом Алисы"
+    mode: queued
+    triggers:
+      - trigger: state
+        entity_id:
+          - binary_sensor.mc_server_online
+          - binary_sensor.bigpc_online
+          - binary_sensor.mac_mini_online
+          - binary_sensor.betapi_online
+          - binary_sensor.betapi_ac_ok
+        from: "off"
+        to: "on"
+    variables:
+      power: "{{ trigger.entity_id.endswith('ac_ok') }}"
+      alert: >-
+        {{ 'event.betapi_alert_power_lost' if power
+           else trigger.entity_id | replace('binary_sensor.', 'event.') | replace('_online', '_alert_offline') }}
+      host: >-
+        {{ {'mc_server': 'эм си сервер', 'bigpc': 'большой комп', 'mac_mini': 'мак мини',
+            'betapi': 'бета пай'}[trigger.entity_id.split('.')[1].rsplit('_', 1)[0] | replace('_ac', '')] }}
+      text: "{{ host ~ (', сеть вернулась' if power else ' снова в сети') }}, всё хорошо."
+    conditions:
+      - "{{ (as_datetime(states(alert), none) or trigger.from_state.last_changed)
+            > trigger.from_state.last_changed }}"
+    actions:
+      - action: persistent_notification.create
+        data:
+          title: "{{ text }}"
+          message: "{{ now().strftime('%d.%m %H:%M') }}"
+      - if: "{{ power or now().hour >= 8 }}"
+        then:
+          - action: media_player.play_media
+            target:
+              entity_id:
+                - media_player.yandex_station_ff98f029d7407353fb617159
+                - media_player.yandex_station_lg0000000000001122190000a5c43d60
+            data:
+              media_content_type: text
+              media_content_id: "{{ text }}"

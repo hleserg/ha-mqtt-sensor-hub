@@ -23,6 +23,10 @@ input_boolean:
     name: Светомузыка
     icon: mdi:music-circle
 
+# Темп по 30-секундному превью Deezer (у Deezer bpm почти везде 0), ~3 с.
+shell_command:
+  light_music_bpm: "python3 /config/tools/light_music_bpm.py {{ tid | int }}"
+
 rest_command:
   deezer:
     url: "https://api.deezer.com/{{ path }}"
@@ -37,6 +41,12 @@ template:
           - media_player.yandex_station_lg0000000000001122190000a5c43d60
         attribute: alice_state
         to: LISTENING
+    # One phrase wakes both stations: the one that heard it first, the other
+    # 0.05–0.5 s later (measured 02.10). The first one wins.
+    conditions:
+      - >-
+        {{ state_attr('sensor.alisa_slushala', 'at') is none or
+           now() - as_datetime(state_attr('sensor.alisa_slushala', 'at')) > timedelta(seconds=3) }}
     sensor:
       - name: Алиса слушала
         unique_id: alice_last_heard
@@ -111,14 +121,20 @@ automation:
             - action: rest_command.deezer
               data:
                 path: >-
-                  album/{{ track.content.album.id | default(0)
+                  album/{{ (track.content.album | default({})).id | default(0)
                            if track is defined and track.content is mapping else 0 }}
               response_variable: album
               continue_on_error: true
+            # Deezer's own bpm, else estimated from the 30 s preview (mostly 0 at Deezer).
+            - action: shell_command.light_music_bpm
+              data: { tid: "{{ tid }}" }
+              response_variable: est
+              continue_on_error: true
             - variables:
                 bpm: >-
-                  {{ track.content.bpm | default(0) | float(0)
-                     if track is defined and track.content is mapping else 0 }}
+                  {{ (track.content.bpm | default(0) | float(0)
+                      if track is defined and track.content is mapping else 0)
+                     or (est.stdout | default(0) | float(0) if est is defined else 0) }}
                 genres: >-
                   {{ album.content.genres.data | default([]) | map(attribute='name')
                      | join(' ') | lower
@@ -128,7 +144,7 @@ automation:
                       'hip hop', 'punk', 'drum', 'alternative'] | select('in', genres) | list | count > 0 }}
                 soft: >-
                   {{ ['classical', 'jazz', 'blues', 'soul', 'ambient', 'chill', 'relax',
-                      'folk', 'r&b', 'films', 'kids'] | select('in', genres) | list | count > 0 }}
+                      'folk', 'r&b', 'kids'] | select('in', genres) | list | count > 0 }}
                 # Deezer often doubles slow songs (Norah Jones 176.7): halve unless the genre is hard.
                 tempo: "{{ bpm / 2 if bpm > 140 and not hard else bpm }}"
                 style: >-
@@ -172,6 +188,20 @@ automation:
               then:
                 - wait_template: "{{ is_state(station, 'playing') }}"
                   timeout: 5
+            # Paused mid-track: the light holds its last frame until play (then
+            # the loop starts the show again), off, or 10 min. Track over — off.
+            - if: >-
+                {{ is_state(station, 'paused') and is_state('input_boolean.svetomuzyka', 'on')
+                   and (state_attr(station, 'media_position') or 0) | float(0)
+                       < (state_attr(station, 'media_duration') or 0) | float(0) - 5 }}
+              then:
+                - action: script.turn_off
+                  target: { entity_id: script.light_music_show }
+                - action: mqtt.publish
+                  data: { topic: ha/light_music/pc, payload: "off" }
+                - wait_template: >-
+                    {{ is_state(station, 'playing') or is_state('input_boolean.svetomuzyka', 'off') }}
+                  timeout: "00:10:00"
             - if: "{{ not is_state(station, 'playing') }}"
               then:
                 - action: input_boolean.turn_off
@@ -214,6 +244,7 @@ script:
           hues: >-
             {{ [200, 215, 230, 250, 270, 290, 310, 330, 15, 30, 15, 330, 300, 260, 230]
                if style == 'calm' else [0, 30, 55, 120, 180, 220, 280, 320] }}
+          t0: "{{ now().timestamp() }}"
       # ponytail: 2000 тактов ≈ 20–30 мин — страховка, если автоматизация не остановит.
       - repeat:
           count: 2000
@@ -240,7 +271,11 @@ script:
                   data:
                     # Bare number: a JSON template would be parsed into a dict.
                     topic: zigbee2mqtt/Пиратская люстра группа/set/scene_recall
-                    payload: "{{ (i - 1) % 8 + 1 }}"
+                    # Scenes 9–16 are the same colours, dimmer: quiet music.
+                    # ponytail: two levels; three if the lamps hold 24 scenes.
+                    payload: >-
+                      {{ (i - 1) % 8 + 1 + (8 if (state_attr(station, 'volume_level') or 0.6)
+                                                    | float(0.6) < 0.45 else 0) }}
               else:
                 - repeat:
                     for_each: "{{ half }}"
@@ -276,19 +311,22 @@ script:
                       {{ 70 if style == 'calm' else 100 }}
                       {{ [100, ((75 if style == 'calm' else 100) * dim * 1.4) | round(0) | int] | min }}
                       {{ period }}
+            # To the beat's own time from the start, not «period after the last
+            # command»: command time no longer adds up and drifts off the song.
             - delay:
-                milliseconds: "{{ (period | float * 1000) | int }}"
+                milliseconds: >-
+                  {{ [0, ((t0 | float + i * period | float - now().timestamp()) * 1000) | int] | max }}
 
   light_music_scenes:
     alias: Светомузыка — записать сцены в люстру
     # Запустить один раз (и после замены лампы): ~1 мин, люстра мигает.
     # Сцены 1–8 группы 2 хранят лампы; бегущие огни для быстрых песен.
-    # ponytail: яркость зашита (громкость 0,6); тише/громче быстрые не меняются.
+    # Сцены 9–16 — те же цвета тусклее, для громкости ниже 0,45 (~2,5 мин).
     # Цвет в сцену лампы берут только свой текущий (scene_store): scene_add с
     # цветом они принимают, но вызывают одну яркость.
     sequence:
       - repeat:
-          for_each: [1, 2, 3, 4, 5, 6, 7, 8]
+          for_each: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
           sequence:
             - variables:
                 sc: "{{ repeat.item }}"
@@ -299,7 +337,8 @@ script:
                     target: { entity_id: "light.piratskaya_lyustra_{{ repeat.item + 1 }}" }
                     data:
                       hs_color: "{{ [[0, 30, 55, 120, 180, 220, 280, 320][(sc * 3 + 2 * repeat.item) % 8], 100] }}"
-                      brightness_pct: "{{ 57 if (sc + repeat.item) % 2 == 0 else 21 }}"
+                      brightness_pct: >-
+                        {{ ((57 if (sc + repeat.item) % 2 == 0 else 21) * (1 if sc <= 8 else 0.5)) | round(0) | int }}
                       transition: 0
                   - delay: { milliseconds: 1200 }
             - delay: { milliseconds: 1500 }
