@@ -219,6 +219,28 @@ the SYSTEM profile: `C:\Windows\System32\config\systemprofile\AppData\Roaming\Op
   exists, but bigpc's Private/Public firewall is off, so the unauthenticated
   SDK port is reachable from the whole LAN.
 
+## bigpc commands (HASS.Agent)
+
+`button.bigpc_agent_*` in HA (monitor off/on, play/pause, next, previous,
+volume up/down, mute, YouTube) come from HASS.Agent 2.2.1 on bigpc, broker
+user `bigpc_agent` (ACL: `homeassistant/+/bigpc_agent/#` only). Telemetry stays
+with `host_mqtt.py`; HASS.Agent publishes no sensors.
+
+- Installed per user in `%LOCALAPPDATA%\HASS.Agent\Client` (user Serg),
+  started at logon by the HKCU Run value `HASS.Agent`. It must run in the
+  desktop session — from ssh (session 0) the media keys and monitor do nothing.
+- Config is `...\Client\config\{appsettings,commands,sensors}.json`; the MQTT
+  password sits there in plain text. Log: `...\Client\logs\`.
+- `LaunchUrlCommand`'s `Command` is JSON, not a bare URL:
+  `{"Url":"https://www.youtube.com/","Incognito":false}`. A bare URL kills
+  loading all commands (`[FTL] [SETTINGS_COMMANDS]`) and the agent never
+  connects to MQTT.
+- The status window shows Local API, HA API and Quick Actions stopped and the
+  Satellite Service failed: none of them are used. MQTT and Commands must be
+  `running`.
+- The agent logs nothing when a command runs; check from HA that the button's
+  state (last press time) moved and that mosquitto logged no `denied`.
+
 ---
 
 ## Updating
