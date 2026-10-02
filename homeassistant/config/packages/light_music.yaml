@@ -8,7 +8,7 @@
 #  Станция играет — музыку не трогает, только свет; молчит 5 с — «включи мою волну».
 #  На каждый трек берёт у Deezer темп и жанр: быстрое/жёсткое — новый цвет и
 #  вспышка на каждый удар, среднее — смена цвета на удар с переходом, спокойное —
-#  плавный дрейф по синим и тёплым раз в два удара. Нет темпа — по жанру.
+#  то же по синим и тёплым, тусклее. Яркость дышит в такт. Нет темпа — по жанру.
 #  Яркость по громкости станции: тише музыка — тусклее свет.
 #  Станция не играет 3 с (пауза, стоп) или выключили устройство — свет как был.
 #  «Алиса, выключи светомузыку» Алиса понимает как «выключи музыку» и ставит
@@ -120,7 +120,7 @@ automation:
                      if album is defined and album.content is mapping else '' }}
                 hard: >-
                   {{ ['dance', 'electro', 'techno', 'house', 'rock', 'metal', 'rap',
-                      'hip hop', 'punk', 'drum'] | select('in', genres) | list | count > 0 }}
+                      'hip hop', 'punk', 'drum', 'alternative'] | select('in', genres) | list | count > 0 }}
                 soft: >-
                   {{ ['classical', 'jazz', 'blues', 'soul', 'ambient', 'chill', 'relax',
                       'folk', 'r&b', 'films', 'kids'] | select('in', genres) | list | count > 0 }}
@@ -144,7 +144,7 @@ automation:
                   target: "{{ target }}"
                   station: "{{ station }}"
                   style: "{{ style }}"
-                  period: "{{ (beat * (2 if style == 'calm' else 1)) | round(3) }}"
+                  period: "{{ beat | round(3) }}"
             - action: logbook.log
               data:
                 name: Светомузыка
@@ -213,11 +213,11 @@ script:
               data:
                 hs_color: "{{ [hue, 70 if style == 'calm' else 100] }}"
                 brightness_pct: >-
-                  {% set base = 30 if style == 'calm' else 50 if style == 'mid'
+                  {% set base = (40 if i % 2 else 20) if style == 'calm'
+                       else (60 if i % 2 else 35) if style == 'mid'
                        else (70 if i % 2 else 25) %}
                   {{ [3, [100, (base * dim) | round(0) | int] | min] | max }}
-                transition: >-
-                  {{ period if style == 'calm' else (period / 2) | round(2)
-                     if style == 'mid' else 0 }}
+                # Every style pulses on the beat (owner: calm looked unrelated to the music).
+                transition: "{{ (period / 2) | round(2) if style != 'energy' else 0 }}"
             - delay:
                 milliseconds: "{{ (period | float * 1000) | int }}"
