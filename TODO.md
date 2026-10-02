@@ -640,7 +640,7 @@ Tuya's cloud, local control does not conflict with it — the device accepts bot
 — but scheduled feeding must live in exactly one place. Two schedulers feeding
 one dog is avoidance #1 with a real-world consequence.
 
-### X11 · Zigbee2MQTT `[~]` — bridge live, network empty
+### X11 · Zigbee2MQTT `[~]` — bridge live, 13 devices paired
 *Deployed by the owner 2026-09-05 (commit `4304409`). Documented and audited
 2026-09-06, which is what this entry is.*
 
@@ -656,7 +656,7 @@ file:
 | Broker | connected as `zigbee2mqtt`; `bridge/state` = `{"state":"online"}` |
 | Discovery | seven bridge entities announced into `homeassistant/…/config` |
 | Web UI | <http://192.168.1.51:8099> — pairing and OTA |
-| **Devices paired** | **0** |
+| **Devices paired** | **13** on 2026-10-02 (`zigbee2mqtt/data/database.db`): 11 lamps (10 Tuya TS0505B, 1 eWeLink CK-BL702), presence sensor HOBEIAN ZG-204ZX, HOBEIAN ZG-301Z; plus one group. First four lamps 2026-09-20 |
 
 **The commit shipped code and no documentation, and that is what was actually
 unfinished.** Nine documents describe this stack and none of them knew Zigbee
@@ -746,16 +746,46 @@ an evening of "the lamp is in Home Assistant but the switch does nothing".
    The four `*.bak-20260905-211643` files are untracked and survived it. Safe
    to delete: the other three are tracked, so their old content is in git, and
    `.env.bak` holds no key absent from the live `.env`.
-2. **Pair the actual devices.** Owner's part, and hands-on by nature: each
-   device has to be put into pairing mode physically. Permit-join is off and
-   should be turned on only for the minute it takes, from the web UI.
-3. **Name every device the moment it pairs.** The friendly name *is* the topic
-   segment and the entity id, so renaming later moves the topic and breaks
-   every automation and card that referenced it. `MQTT.md` §6b.
-4. **Rehearse one restore before the network is worth anything.** `zigbee2mqtt/data/`
-   is now the second irreplaceable thing in the stack after the recorder
-   database — lose it and every device gets re-paired by hand. It is in the
-   `--full` archive and untested as a restore. `BACKUP_RESTORE.md`.
+2. ~~**Pair the actual devices.**~~ — done 2026-09-20, four lamps. What it
+   cost: on channel 11 no join request reached the bridge for ~25 minutes and
+   the coordinator looked broken. Channel was moved to **25** and the container
+   restarted; both lamps joined ~70 s later. Which of the two mattered was not
+   isolated — after any `channel:` change, restart before suspecting the radio.
+   Distance and USB3 interference were both ruled out first, and `touchlink`
+   found nothing. Permit-join is off again.
+3. ~~**Name every device the moment it pairs.**~~ — done, but the rule as
+   written is wrong for discovered devices. `bridge/request/device/rename` with
+   `homeassistant_rename: true` moves the **display name** only; the
+   `entity_id` is bound to `unique_id` and survives re-discovery. And when an
+   id *is* recreated, HA transliterates Cyrillic itself
+   (`light.prikhozhaia_stena_sleva_ot_vannoi`). Predictable ids come from the
+   entity registry over WebSocket — `scripts/normalize-entity-ids.sh` is the
+   pattern; it skips discovered devices on purpose, so Zigbee needed a one-off
+   variant with an explicit `ieee → slug` map. `MQTT.md` §6b still holds for
+   the topic segment.
+4. **Rehearse one restore.** Half-done 2026-09-21, and the cheap half is the
+   half that catches an empty backup.
+
+   **Verified from the archive, not from the backup script.**
+   `iot-stack-20260921-043001-full.tar.gz` (04:30, i.e. after the lamps
+   paired) carries every file of the live `zigbee2mqtt/data/` — nothing
+   missing against `ls`. `database.db` was extracted to a scratch dir and
+   read: coordinator `0x14b457fffed6bc11`, **four Routers** with the same
+   IEEEs as `HANDOFF.md`, and one `Group`. So the network really is in the
+   archive, not just the directory name.
+
+   Note for anyone reading the db: z2m 2.x keeps friendly names in
+   `configuration.yaml`, **not** in `database.db` — grepping the db for
+   `friendly_name` returns nothing and that is not a sign of a bad backup.
+
+   **Still untested: the restore itself.** Writing `zigbee2mqtt/data/` back
+   and bringing the bridge up on it needs the coordinator, so it cannot be
+   rehearsed beside the live one — it costs a real outage window. The failure
+   it would catch is a restored network whose frame counters are stale enough
+   that devices refuse to talk. `BACKUP_RESTORE.md`.
+
+   The `--full` archive is chmod 600 and holds the network key: extract only
+   the file you need, to a scratch dir, and delete it.
 
 **Not a task, but worth stating so it is not re-litigated:** the choice of
 Zigbee2MQTT over ZHA is cheap to reverse *today* and expensive after the first

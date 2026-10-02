@@ -750,3 +750,33 @@ one, because the network key and device table live in `zigbee2mqtt/data/` in a
 format ZHA does not read. Decide before pairing devices, not after. Today the
 network is empty, so the cost of changing course is still zero; that will stop
 being true with the first paired device.
+
+**ADDENDUM 2026-09-20 — the network is no longer empty, and the coordinator's
+receive path is proven.**
+
+Four Tuya TS0505B_1 lamps are paired and commandable from Home Assistant
+(`HANDOFF.md` has the IEEE-to-entity table). The last two rows above are
+therefore spent: reversibility is now what this entry called asymmetric, and
+the "cost of changing course is still zero" sentence expired with the first
+lamp.
+
+The pairing itself produced one piece of evidence worth keeping, because it was
+nearly misread as a hardware fault. For about 25 minutes no join request
+reached the bridge at all — the reasonable next suspicion was the ZB-GW04's
+receive path, i.e. a reflash. It was not the radio. Two things changed
+together, **channel 11 → 25** and a **restart of the bridge after the channel
+change**, and both lamps joined about 70 seconds later. Which of the two was
+decisive was not isolated, so the honest form is: after changing `channel:` in
+`configuration.yaml`, restart the container before concluding anything about
+the coordinator. The stick is fine and needs no new firmware.
+
+Two smaller facts from the same session:
+
+- **Cyrillic friendly names work end to end.** `zigbee2mqtt/Торшер в комнате/set`
+  is accepted by the ACL rule `zigbee2mqtt/+/set` and delivered.
+- **`homeassistant_rename: true` does not move an `entity_id`.** It changes the
+  display name only; the id is bound to `unique_id` and survives re-discovery.
+  Predictable Latin ids come from the entity registry over WebSocket, which is
+  what `scripts/normalize-entity-ids.sh` does for this stack's own MQTT
+  entities. It deliberately does not touch discovered devices, so Zigbee ids
+  were renamed by a one-off variant of it.
