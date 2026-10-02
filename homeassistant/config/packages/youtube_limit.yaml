@@ -10,7 +10,7 @@
 #  - 2 ч за цикл → перерыв 1 ч. Цикл обнуляет 1 ч без YouTube.
 #  - 00:00–07:00 — нельзя.
 #  Минуты считаются раз в минуту по состоянию в этот момент.
-#  В перерыв HA шлёт action кнопке HASS.Agent yt_close → tools/yt-close.ps1:
+#  В перерыв HA жмёт кнопку HASS.Agent yt_close (тело — tools/yt-close.ps1):
 #  тот сам проверяет, что впереди браузер с YouTube, жмёт Ctrl+W и показывает
 #  окно с причиной. Выключил выключатель — счётчики и перерыв сбрасываются.
 # =============================================================================
@@ -143,14 +143,9 @@ automation:
           - condition: time
             before: "07:00:00"
     actions:
-      - action: mqtt.publish
-        data:
-          topic: homeassistant/button/bigpc_agent/yt_close/action
-          payload: >-
-            {% if is_state('timer.youtube_break', 'active') %}YouTube: перерыв до
-            {{ as_timestamp(state_attr('timer.youtube_break', 'finishes_at'))
-               | timestamp_custom('%H:%M') }}{% else %}YouTube: ночью нельзя, до
-            07:00{% endif %}
+      - action: button.press
+        target:
+          entity_id: button.bigpc_agent_yt_close
       - delay: 5
 
   - id: youtube_limit_off

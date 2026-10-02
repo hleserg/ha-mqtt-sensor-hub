@@ -1,8 +1,10 @@
-﻿# Runs on bigpc as HASS.Agent command "yt_close" (packages/youtube_limit.yaml).
+# Body of the HASS.Agent PowerShell command "yt_close" on bigpc
+# (packages/youtube_limit.yaml); pasted inline into commands.json, not run as a
+# file: bigpc's execution policy is AllSigned, and HASS.Agent runs inline
+# commands via -EncodedCommand, which the policy does not cover. Inline
+# commands get no action argument, hence the fixed message.
 # Closes the active tab only when the foreground window is a browser showing
 # YouTube, so a late or repeated press can never close something else.
-# Arguments: the message to show, e.g. "YouTube: перерыв до 14:35".
-# Saved as UTF-8 with BOM: Windows PowerShell 5.1 reads BOM-less files as ANSI.
 Add-Type @'
 using System; using System.Runtime.InteropServices; using System.Text;
 public static class FgWin {
@@ -21,6 +23,4 @@ if ($title.ToString() -notmatch 'YouTube' -or $proc -notin 'chrome', 'msedge', '
 
 $shell = New-Object -ComObject WScript.Shell
 $shell.SendKeys('^w')
-$msg = $args -join ' '
-if (-not $msg) { $msg = 'YouTube: перерыв' }
-[void]$shell.Popup($msg, 8, 'Лимит YouTube', 64)
+[void]$shell.Popup('Сейчас перерыв или ночь. Выключатель: «Пульт» → «YouTube на компе».', 8, 'Лимит YouTube', 64)
