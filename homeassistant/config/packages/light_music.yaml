@@ -3,16 +3,18 @@
 # =============================================================================
 #  input_boolean.svetomuzyka выставлен в Алису устройством «Светомузыка».
 #  Включили — HA берёт станцию, которая последней слушала (≤ 60 с назад; иначе
-#  Мини), и свет её комнаты: Комната — z2m-группа «Пиратская люстра группа»
-#  (одна команда на 4 лампы), Кухня — «Кухня люстра 1» (остальные там только вкл/выкл).
+#  Мини), и свет её комнаты: Комната — 4 лампы «Пиратской люстры», каждая своим
+#  цветом, бегущими огнями (1+3, потом 2+4); гасит z2m-группа «Пиратская люстра
+#  группа». Кухня — «Кухня люстра 1» (остальные там только вкл/выкл).
 #  Станция играет — музыку не трогает, только свет; молчит 5 с — «включи мою волну».
-#  На каждый трек берёт у Deezer темп и жанр: быстрое/жёсткое — новый цвет и
-#  вспышка на каждый удар, среднее — смена цвета на удар с переходом, спокойное —
-#  то же по синим и тёплым, тусклее. Яркость дышит в такт. Нет темпа — по жанру.
+#  На каждый трек берёт у Deezer темп и жанр: на каждый удар половина ламп
+#  меняет цвет и вспыхивает или гаснет; быстрое/жёсткое — резко и через цвет,
+#  среднее — с переходом, спокойное — синие и тёплые, тусклее.
+#  Нет темпа — по жанру.
 #  Яркость по громкости станции: тише музыка — тусклее свет.
 #  Станция не играет 3 с (пауза, стоп) или выключили устройство — свет как был.
 #  «Алиса, выключи светомузыку» Алиса понимает как «выключи музыку» и ставит
-#  паузу — фразу перехватывает сценарий в приложении Яндекса (делает владелец).
+#  паузу; станция не играет 3 с — светомузыка гаснет за ней.
 #  Удары не ловятся: станция не отдаёт звук. Темп верный, фаза — нет.
 # =============================================================================
 
@@ -60,8 +62,7 @@ automation:
                if heard_at and now() - as_datetime(heard_at) < timedelta(seconds=60)
                else mini }}
           kitchen: "{{ station != mini }}"
-          # Not light.piratskaya_lyustra: that template light sends 4 unicasts per
-          # tick, z2m drops some and delivers the rest after the stop.
+          # Group for the stop: one groupcast reaches lamp 1, unicasts it drops.
           target: "{{ 'light.kuhnya_lyustra_1' if kitchen else 'light.piratskaia_liustra_gruppa' }}"
           lamps: >-
             {{ ['light.kuhnya_lyustra_1'] if kitchen else
@@ -141,7 +142,7 @@ automation:
               target: { entity_id: script.light_music_show }
               data:
                 variables:
-                  target: "{{ target }}"
+                  lamps: "{{ lamps }}"
                   station: "{{ station }}"
                   style: "{{ style }}"
                   period: "{{ beat | round(3) }}"
@@ -191,8 +192,8 @@ script:
     alias: Светомузыка — цвета
     mode: restart
     fields:
-      target:
-        description: Лампа или zigbee-группа
+      lamps:
+        description: Лампы — свой цвет у каждой
       station:
         description: Станция — по её громкости яркость
       style:
@@ -210,21 +211,35 @@ script:
           sequence:
             - variables:
                 i: "{{ repeat.index }}"
-                hue: >-
-                  {{ hues[i % hues | count] if style == 'calm'
-                     else hues[(i * 3) % hues | count] }}
+                # Running lights: per beat lamps 1+3, then 2+4, each its own colour.
+                # Two unicasts per beat is what the mesh holds; four got lost and
+                # arrived after the stop (lamp 1 stayed on).
+                half: >-
+                  {{ ([0, 2] if i % 2 else [1, 3]) if lamps | count == 4
+                     else range(lamps | count) | list }}
+                # Each half goes bright, then dim, on its own turns.
+                hi: "{{ ((i // 2) % 2 if lamps | count == 4 else i % 2) == 1 }}"
                 # Louder — brighter: volume 0.6 gives 82 % of the base (owner: 15–20 % dimmer).
                 dim: "{{ (state_attr(station, 'volume_level') or 0.6) | float(0.6) * 1.37 }}"
-            - action: light.turn_on
-              target: { entity_id: "{{ target }}" }
-              data:
-                hs_color: "{{ [hue, 70 if style == 'calm' else 100] }}"
-                brightness_pct: >-
-                  {% set base = (40 if i % 2 else 20) if style == 'calm'
-                       else (60 if i % 2 else 35) if style == 'mid'
-                       else (70 if i % 2 else 25) %}
-                  {{ [3, [100, (base * dim) | round(0) | int] | min] | max }}
-                # Every style pulses on the beat (owner: calm looked unrelated to the music).
-                transition: "{{ (period / 2) | round(2) if style != 'energy' else 0 }}"
+            - repeat:
+                for_each: "{{ half }}"
+                sequence:
+                  - action: light.turn_on
+                    target: { entity_id: "{{ lamps[repeat.item] }}" }
+                    data:
+                      # k counts this lamp's own changes; offsets keep the four apart.
+                      hs_color: >-
+                        {% set k = i // 2 if lamps | count == 4 else i %}
+                        {{ [hues[(k + 3 * repeat.item) % hues | count] if style == 'calm'
+                            else hues[(k * 3 + 2 * repeat.item) % hues | count],
+                            70 if style == 'calm' else 100] }}
+                      # The flash is what reads as "to the music" (owner: without it
+                      # the lights stopped reacting). Colour-only cut no z2m timeouts.
+                      brightness_pct: >-
+                        {% set base = (40 if hi else 20) if style == 'calm'
+                             else (60 if hi else 35) if style == 'mid'
+                             else (70 if hi else 25) %}
+                        {{ [3, [100, (base * dim) | round(0) | int] | min] | max }}
+                      transition: "{{ (period / 2) | round(2) if style != 'energy' else 0 }}"
             - delay:
                 milliseconds: "{{ (period | float * 1000) | int }}"
