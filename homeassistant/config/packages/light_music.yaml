@@ -159,10 +159,18 @@ automation:
               data:
                 variables:
                   lamps: "{{ lamps }}"
-                  extra: "{{ extra }}"
                   station: "{{ station }}"
                   style: "{{ style }}"
                   period: "{{ beat | round(3) }}"
+            - if: "{{ extra | count > 0 }}"
+              then:
+                - action: script.turn_on
+                  target: { entity_id: script.light_music_pc }
+                  data:
+                    variables:
+                      extra: "{{ extra }}"
+                      station: "{{ station }}"
+                      style: "{{ style }}"
             - action: logbook.log
               data:
                 name: Светомузыка
@@ -189,7 +197,7 @@ automation:
                 - action: input_boolean.turn_off
                   target: { entity_id: input_boolean.svetomuzyka }
       - action: script.turn_off
-        target: { entity_id: script.light_music_show }
+        target: { entity_id: [script.light_music_show, script.light_music_pc] }
       # Two passes: lamp 1 has a weak link and drops unicasts under load;
       # a groupcast off reaches it.
       - repeat:
@@ -211,8 +219,6 @@ script:
     fields:
       lamps:
         description: Лампы — свой цвет у каждой
-      extra:
-        description: Подсветки, что мигают вместе с лампой 1 (комп)
       station:
         description: Станция — по её громкости яркость
       style:
@@ -272,19 +278,40 @@ script:
                                  else (70 if hi else 25) %}
                             {{ [3, [100, (base * dim) | round(0) | int] | min] | max }}
                           transition: "{{ (period / 2) | round(2) if style != 'energy' else 0 }}"
-            - repeat:
-                for_each: "{{ extra }}"
-                sequence:
-                  - action: light.turn_on
-                    target: { entity_id: "{{ repeat.item }}" }
-                    data:
-                      hs_color: >-
-                        {{ [hues[i % hues | count] if style == 'calm'
-                            else hues[(i * 3) % hues | count], 70 if style == 'calm' else 100] }}
-                      brightness_pct: "{{ (30 if i % 2 else 100) if style != 'calm' else (40 if i % 2 else 80) }}"
-                    continue_on_error: true
             - delay:
                 milliseconds: "{{ (period | float * 1000) | int }}"
+
+  light_music_pc:
+    alias: Светомузыка — подсветка компа
+    # Each OpenRGB call takes 0.6 s (HA waits for the server's refresh), so it
+    # can't keep the beat and mustn't hold up the chandelier: its own loop,
+    # small hue steps read as a smooth flow (owner: «хотелось бы плавности»).
+    mode: restart
+    fields:
+      extra:
+        description: Подсветки
+      station:
+        description: Станция — по её громкости яркость
+      style:
+        description: energy / mid / calm
+    sequence:
+      - repeat:
+          until: "{{ not is_state('script.light_music_show', 'on') or repeat.index > 6000 }}"
+          sequence:
+            - variables:
+                n: "{{ repeat.index }}"
+                dim: "{{ (state_attr(station, 'volume_level') or 0.6) | float(0.6) * 1.37 }}"
+            - action: light.turn_on
+              target: { entity_id: "{{ extra }}" }
+              data:
+                # calm: blue-violet 200–330 back and forth; else the full circle.
+                hs_color: >-
+                  {{ [(265 + 65 * (n / 8) | sin) | round(0) if style == 'calm'
+                      else (n * 12) % 360, 70 if style == 'calm' else 100] }}
+                brightness_pct: "{{ [100, ((60 if style == 'calm' else 80) * dim) | round(0) | int] | min }}"
+              continue_on_error: true
+            # Floor for the loop if the call fails fast (PC went off).
+            - delay: { milliseconds: 200 }
 
   light_music_scenes:
     alias: Светомузыка — записать сцены в люстру
