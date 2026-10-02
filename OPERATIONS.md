@@ -229,6 +229,9 @@ with `host_mqtt.py`; HASS.Agent publishes no sensors.
 - Installed per user in `%LOCALAPPDATA%\HASS.Agent\Client` (user Serg),
   started at logon by the HKCU Run value `HASS.Agent`. It must run in the
   desktop session — from ssh (session 0) the media keys and monitor do nothing.
+- It does not stop a second copy from starting. Two copies share the client id
+  and knock each other off the broker every second (mosquitto: `bigpc_agent
+  already connected, closing old connection`): kill one.
 - Config is `...\Client\config\{appsettings,commands,sensors}.json`; the MQTT
   password sits there in plain text. Log: `...\Client\logs\`.
 - `LaunchUrlCommand`'s `Command` is JSON, not a bare URL:
