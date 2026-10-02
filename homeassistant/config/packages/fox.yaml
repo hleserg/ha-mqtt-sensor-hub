@@ -129,6 +129,8 @@ automation:
             target: { entity_id: *fox_runs }
           - action: script.turn_off
             target: { entity_id: script.light_music_show }
+          - action: mqtt.publish   # tools/pc_rgb_fader.py: отпустить подсветку компа
+            data: { topic: ha/light_music/pc, payload: "off" }
           - action: input_boolean.turn_off
             target: { entity_id: input_boolean.svetomuzyka }
           - action: light.turn_off

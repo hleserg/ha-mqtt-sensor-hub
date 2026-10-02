@@ -218,6 +218,12 @@ the SYSTEM profile: `C:\Windows\System32\config\systemprofile\AppData\Roaming\Op
 - The firewall rule `OpenRGB SDK from doctor` (TCP 6742 from 192.168.1.51)
   exists, but bigpc's Private/Public firewall is off, so the unauthenticated
   SDK port is reachable from the whole LAN.
+- Light music drives the board without HA's integration, which takes 0.6 s
+  per command: `pc-rgb-fader.service` on doctor (`tools/pc_rgb_fader.py`,
+  install notes in `tools/pc-rgb-fader.service`) reads one beat per message
+  from `ha/light_music/pc` (MQTT user `pc_rgb`, password in
+  `/etc/default/pc-rgb-fader`) and fades at 30 fps over the SDK in Static mode.
+  Logs: `journalctl -u pc-rgb-fader`.
 
 ## bigpc commands (HASS.Agent)
 

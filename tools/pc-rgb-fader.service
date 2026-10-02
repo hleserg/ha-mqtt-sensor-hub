@@ -1,0 +1,17 @@
+# /etc/systemd/system/pc-rgb-fader.service — doctor (tools/pc_rgb_fader.py)
+# openrgb-python: pip install --target /usr/local/lib/pc-rgb-fader openrgb-python==0.3.6
+[Unit]
+Description=bigpc backlight to the light-music beat (MQTT -> OpenRGB SDK)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+ExecStart=/usr/bin/python3 /usr/local/bin/pc-rgb-fader
+EnvironmentFile=/etc/default/pc-rgb-fader
+Environment=PYTHONPATH=/usr/local/lib/pc-rgb-fader
+Restart=always
+RestartSec=15
+DynamicUser=yes
+
+[Install]
+WantedBy=multi-user.target

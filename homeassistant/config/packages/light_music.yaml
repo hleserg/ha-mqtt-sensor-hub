@@ -10,7 +10,7 @@
 #  На каждый трек берёт у Deezer темп и жанр: на каждый удар половина ламп
 #  меняет цвет и вспыхивает или гаснет; быстрое/жёсткое — резко и через цвет,
 #  среднее — с переходом, спокойное — синие и тёплые, тусклее.
-#  Нет темпа — по жанру.
+#  Нет темпа — по жанру. В комнате с ними подсветка компа (tools/pc_rgb_fader.py).
 #  Яркость по громкости станции: тише музыка — тусклее свет.
 #  Станция не играет 3 с (пауза, стоп) или выключили устройство — свет как был.
 #  «Алиса, выключи светомузыку» Алиса понимает как «выключи музыку» и ставит
@@ -28,12 +28,6 @@ rest_command:
     url: "https://api.deezer.com/{{ path }}"
     method: get
     timeout: 10
-
-shell_command:
-  # openrgb-python ships with HA's OpenRGB integration; bigpc = 192.168.1.10.
-  pc_rgb_static: >-
-    python3 -c "from openrgb import OpenRGBClient as C;
-    [d.set_mode('Static') for d in C('192.168.1.10', 6742, 'ha-light-music').devices if 'MSI' in d.name]"
 
 template:
   - triggers:
@@ -83,12 +77,6 @@ automation:
         data:
           scene_id: light_music_before
           snapshot_entities: "{{ lamps + extra }}"
-      # HA's effect "off" asks the board for Direct, and it falls back to
-      # Breathing; Static holds and takes a colour per beat.
-      - if: "{{ extra | count > 0 and state_attr('light.podsvetka_kompa', 'effect') != 'off' }}"
-        then:
-          - action: shell_command.pc_rgb_static
-            continue_on_error: true
       # Alice pauses the music while she listens: give it 5 s to resume.
       - wait_template: "{{ is_state(station, 'playing') }}"
         timeout: 5
@@ -162,15 +150,7 @@ automation:
                   station: "{{ station }}"
                   style: "{{ style }}"
                   period: "{{ beat | round(3) }}"
-            - if: "{{ extra | count > 0 }}"
-              then:
-                - action: script.turn_on
-                  target: { entity_id: script.light_music_pc }
-                  data:
-                    variables:
-                      extra: "{{ extra }}"
-                      station: "{{ station }}"
-                      style: "{{ style }}"
+                  pc: "{{ extra | count > 0 }}"
             - action: logbook.log
               data:
                 name: Светомузыка
@@ -197,7 +177,9 @@ automation:
                 - action: input_boolean.turn_off
                   target: { entity_id: input_boolean.svetomuzyka }
       - action: script.turn_off
-        target: { entity_id: [script.light_music_show, script.light_music_pc] }
+        target: { entity_id: script.light_music_show }
+      - action: mqtt.publish
+        data: { topic: ha/light_music/pc, payload: "off" }
       # Two passes: lamp 1 has a weak link and drops unicasts under load;
       # a groupcast off reaches it.
       - repeat:
@@ -225,6 +207,8 @@ script:
         description: energy, mid или calm
       period:
         description: Секунд между командами
+      pc:
+        description: Слать такты подсветке компа (tools/pc_rgb_fader.py)
     sequence:
       - variables:
           hues: >-
@@ -278,40 +262,21 @@ script:
                                  else (70 if hi else 25) %}
                             {{ [3, [100, (base * dim) | round(0) | int] | min] | max }}
                           transition: "{{ (period / 2) | round(2) if style != 'energy' else 0 }}"
+            # The PC backlight fades itself between beats (tools/pc_rgb_fader.py):
+            # HA's OpenRGB call takes 0.6 s and can't keep the beat. It gets
+            # «hue sat bright period», a colour of its own each beat.
+            - if: "{{ pc | default(false) }}"
+              then:
+                - action: mqtt.publish
+                  data:
+                    topic: ha/light_music/pc
+                    payload: >-
+                      {{ hues[(i * (1 if style == 'calm' else 3)) % hues | count] }}
+                      {{ 70 if style == 'calm' else 100 }}
+                      {{ [100, ((50 if style == 'calm' else 70 if style == 'mid' else 85) * dim) | round(0) | int] | min }}
+                      {{ period }}
             - delay:
                 milliseconds: "{{ (period | float * 1000) | int }}"
-
-  light_music_pc:
-    alias: Светомузыка — подсветка компа
-    # Each OpenRGB call takes 0.6 s (HA waits for the server's refresh), so it
-    # can't keep the beat and mustn't hold up the chandelier: its own loop,
-    # small hue steps read as a smooth flow (owner: «хотелось бы плавности»).
-    mode: restart
-    fields:
-      extra:
-        description: Подсветки
-      station:
-        description: Станция — по её громкости яркость
-      style:
-        description: energy / mid / calm
-    sequence:
-      - repeat:
-          until: "{{ not is_state('script.light_music_show', 'on') or repeat.index > 6000 }}"
-          sequence:
-            - variables:
-                n: "{{ repeat.index }}"
-                dim: "{{ (state_attr(station, 'volume_level') or 0.6) | float(0.6) * 1.37 }}"
-            - action: light.turn_on
-              target: { entity_id: "{{ extra }}" }
-              data:
-                # calm: blue-violet 200–330 back and forth; else the full circle.
-                hs_color: >-
-                  {{ [(265 + 65 * (n / 8) | sin) | round(0) if style == 'calm'
-                      else (n * 12) % 360, 70 if style == 'calm' else 100] }}
-                brightness_pct: "{{ [100, ((60 if style == 'calm' else 80) * dim) | round(0) | int] | min }}"
-              continue_on_error: true
-            # Floor for the loop if the call fails fast (PC went off).
-            - delay: { milliseconds: 200 }
 
   light_music_scenes:
     alias: Светомузыка — записать сцены в люстру
