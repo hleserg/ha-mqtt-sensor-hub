@@ -29,6 +29,12 @@ rest_command:
     method: get
     timeout: 10
 
+shell_command:
+  # openrgb-python ships with HA's OpenRGB integration; bigpc = 192.168.1.10.
+  pc_rgb_static: >-
+    python3 -c "from openrgb import OpenRGBClient as C;
+    [d.set_mode('Static') for d in C('192.168.1.10', 6742, 'ha-light-music').devices if 'MSI' in d.name]"
+
 template:
   - triggers:
       - trigger: state
@@ -69,10 +75,20 @@ automation:
                ['light.piratskaya_lyustra_1', 'light.piratskaya_lyustra_2',
                 'light.piratskaya_lyustra_3', 'light.piratskaya_lyustra_4'] }}
           was_off: "{{ lamps | select('is_state', 'on') | list | count == 0 }}"
+          # Big PC's backlight (OpenRGB over LAN) joins in the room; off PC — skipped.
+          extra: >-
+            {{ [] if kitchen or states('light.podsvetka_kompa') in ['unavailable', 'unknown']
+               else ['light.podsvetka_kompa'] }}
       - action: scene.create
         data:
           scene_id: light_music_before
-          snapshot_entities: "{{ lamps }}"
+          snapshot_entities: "{{ lamps + extra }}"
+      # HA's effect "off" asks the board for Direct, and it falls back to
+      # Breathing; Static holds and takes a colour per beat.
+      - if: "{{ extra | count > 0 and state_attr('light.podsvetka_kompa', 'effect') != 'off' }}"
+        then:
+          - action: shell_command.pc_rgb_static
+            continue_on_error: true
       # Alice pauses the music while she listens: give it 5 s to resume.
       - wait_template: "{{ is_state(station, 'playing') }}"
         timeout: 5
@@ -143,6 +159,7 @@ automation:
               data:
                 variables:
                   lamps: "{{ lamps }}"
+                  extra: "{{ extra }}"
                   station: "{{ station }}"
                   style: "{{ style }}"
                   period: "{{ beat | round(3) }}"
@@ -179,13 +196,13 @@ automation:
           count: 2
           sequence:
             - delay: 2
+            - action: scene.turn_on
+              target: { entity_id: scene.light_music_before }
+              continue_on_error: true
             - if: "{{ was_off }}"
               then:
                 - action: light.turn_off
                   target: { entity_id: "{{ target }}" }
-              else:
-                - action: scene.turn_on
-                  target: { entity_id: scene.light_music_before }
 
 script:
   light_music_show:
@@ -194,6 +211,8 @@ script:
     fields:
       lamps:
         description: Лампы — свой цвет у каждой
+      extra:
+        description: Подсветки, что мигают вместе с лампой 1 (комп)
       station:
         description: Станция — по её громкости яркость
       style:
@@ -221,25 +240,78 @@ script:
                 hi: "{{ ((i // 2) % 2 if lamps | count == 4 else i % 2) == 1 }}"
                 # Louder — brighter: volume 0.6 gives 82 % of the base (owner: 15–20 % dimmer).
                 dim: "{{ (state_attr(station, 'volume_level') or 0.6) | float(0.6) * 1.37 }}"
+            # Fast songs: one groupcast per beat recalls a scene the lamps hold
+            # (script.light_music_scenes) — all four change at once, no unicast
+            # waits for a reply. Unicasts timed out on lamps 1 and 3, queued up,
+            # and the light lagged the music (owner: «тормозит»).
+            - if: "{{ style == 'energy' and lamps | count == 4 }}"
+              then:
+                - action: mqtt.publish
+                  data:
+                    # Bare number: a JSON template would be parsed into a dict.
+                    topic: zigbee2mqtt/Пиратская люстра группа/set/scene_recall
+                    payload: "{{ (i - 1) % 8 + 1 }}"
+              else:
+                - repeat:
+                    for_each: "{{ half }}"
+                    sequence:
+                      - action: light.turn_on
+                        target: { entity_id: "{{ lamps[repeat.item] }}" }
+                        data:
+                          # k counts this lamp's own changes; offsets keep the four apart.
+                          hs_color: >-
+                            {% set k = i // 2 if lamps | count == 4 else i %}
+                            {{ [hues[(k + 3 * repeat.item) % hues | count] if style == 'calm'
+                                else hues[(k * 3 + 2 * repeat.item) % hues | count],
+                                70 if style == 'calm' else 100] }}
+                          # The flash is what reads as "to the music" (owner: without it
+                          # the lights stopped reacting). Colour-only cut no z2m timeouts.
+                          brightness_pct: >-
+                            {% set base = (40 if hi else 20) if style == 'calm'
+                                 else (60 if hi else 35) if style == 'mid'
+                                 else (70 if hi else 25) %}
+                            {{ [3, [100, (base * dim) | round(0) | int] | min] | max }}
+                          transition: "{{ (period / 2) | round(2) if style != 'energy' else 0 }}"
             - repeat:
-                for_each: "{{ half }}"
+                for_each: "{{ extra }}"
                 sequence:
                   - action: light.turn_on
-                    target: { entity_id: "{{ lamps[repeat.item] }}" }
+                    target: { entity_id: "{{ repeat.item }}" }
                     data:
-                      # k counts this lamp's own changes; offsets keep the four apart.
                       hs_color: >-
-                        {% set k = i // 2 if lamps | count == 4 else i %}
-                        {{ [hues[(k + 3 * repeat.item) % hues | count] if style == 'calm'
-                            else hues[(k * 3 + 2 * repeat.item) % hues | count],
-                            70 if style == 'calm' else 100] }}
-                      # The flash is what reads as "to the music" (owner: without it
-                      # the lights stopped reacting). Colour-only cut no z2m timeouts.
-                      brightness_pct: >-
-                        {% set base = (40 if hi else 20) if style == 'calm'
-                             else (60 if hi else 35) if style == 'mid'
-                             else (70 if hi else 25) %}
-                        {{ [3, [100, (base * dim) | round(0) | int] | min] | max }}
-                      transition: "{{ (period / 2) | round(2) if style != 'energy' else 0 }}"
+                        {{ [hues[i % hues | count] if style == 'calm'
+                            else hues[(i * 3) % hues | count], 70 if style == 'calm' else 100] }}
+                      brightness_pct: "{{ (30 if i % 2 else 100) if style != 'calm' else (40 if i % 2 else 80) }}"
+                    continue_on_error: true
             - delay:
                 milliseconds: "{{ (period | float * 1000) | int }}"
+
+  light_music_scenes:
+    alias: Светомузыка — записать сцены в люстру
+    # Запустить один раз (и после замены лампы): ~1 мин, люстра мигает.
+    # Сцены 1–8 группы 2 хранят лампы; бегущие огни для быстрых песен.
+    # ponytail: яркость зашита (громкость 0,6); тише/громче быстрые не меняются.
+    # Цвет в сцену лампы берут только свой текущий (scene_store): scene_add с
+    # цветом они принимают, но вызывают одну яркость.
+    sequence:
+      - repeat:
+          for_each: [1, 2, 3, 4, 5, 6, 7, 8]
+          sequence:
+            - variables:
+                sc: "{{ repeat.item }}"
+            - repeat:
+                for_each: [0, 1, 2, 3]
+                sequence:
+                  - action: light.turn_on
+                    target: { entity_id: "light.piratskaya_lyustra_{{ repeat.item + 1 }}" }
+                    data:
+                      hs_color: "{{ [[0, 30, 55, 120, 180, 220, 280, 320][(sc * 3 + 2 * repeat.item) % 8], 100] }}"
+                      brightness_pct: "{{ 57 if (sc + repeat.item) % 2 == 0 else 21 }}"
+                      transition: 0
+                  - delay: { milliseconds: 1200 }
+            - delay: { milliseconds: 1500 }
+            - action: mqtt.publish
+              data:
+                topic: zigbee2mqtt/Пиратская люстра группа/set
+                payload: '{"scene_store": {"ID": {{ sc }}, "name": "lm{{ sc }}"}}'
+            - delay: 2
