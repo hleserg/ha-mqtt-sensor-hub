@@ -154,11 +154,18 @@ automation:
                   entity_id: input_boolean.svetomuzyka
                   to: "off"
                 - trigger: template
+                  id: track
                   value_template: "{{ (state_attr(station, 'media_title') or '') != title }}"
                 - trigger: template
                   value_template: "{{ not is_state(station, 'playing') }}"
                   for: 3
               timeout: "00:15:00"
+            # A track started from the phone shows up as "paused" with the new
+            # title for a moment, then plays.
+            - if: "{{ wait.trigger and wait.trigger.id == 'track' }}"
+              then:
+                - wait_template: "{{ is_state(station, 'playing') }}"
+                  timeout: 5
             - if: "{{ not is_state(station, 'playing') }}"
               then:
                 - action: input_boolean.turn_off
