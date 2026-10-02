@@ -12,7 +12,8 @@
 #  Минуты считаются раз в минуту по состоянию в этот момент.
 #  В перерыв HA жмёт кнопку HASS.Agent yt_close (тело — tools/yt-close.ps1):
 #  тот сам проверяет, что впереди браузер с YouTube, жмёт Ctrl+W и показывает
-#  окно с причиной. Выключил выключатель — счётчики и перерыв сбрасываются.
+#  окно с причиной, а станции говорят, сколько осталось (ночью — «пора спать»),
+#  не чаще раза в 2 мин. Выключил выключатель — счётчики и перерыв сбрасываются.
 # =============================================================================
 
 input_boolean:
@@ -146,6 +147,12 @@ automation:
       - action: button.press
         target:
           entity_id: button.bigpc_agent_yt_close
+      # The retry fires every 20 s; one phrase per 2 min is enough.
+      - if: >-
+          {{ now() - (state_attr('script.youtube_limit_say', 'last_triggered')
+                      or as_datetime('2000-01-01T00:00:00+00:00')) > timedelta(minutes=2) }}
+        then:
+          - action: script.youtube_limit_say
       - delay: 5
 
   - id: youtube_limit_off
@@ -161,3 +168,32 @@ automation:
       - action: counter.reset
         target:
           entity_id: [counter.youtube_streak, counter.youtube_cycle, counter.youtube_idle]
+
+script:
+  youtube_limit_say:
+    alias: YouTube — сказать, почему закрыт
+    mode: single
+    variables:
+      night: "{{ now().hour < 7 }}"
+      left: >-
+        {% set f = state_attr('timer.youtube_break', 'finishes_at') %}
+        {{ ((as_datetime(f) - now()).total_seconds() / 60) | round(0, 'ceil') | int
+           if f else 0 }}
+      unit: >-
+        {% set n = left | int %}
+        {{ 'минута' if n % 10 == 1 and n % 100 != 11
+           else 'минуты' if n % 10 in [2, 3, 4] and n % 100 not in [12, 13, 14]
+           else 'минут' }}
+      text: >-
+        {% if night %}Закрываю ютуб. Уже слишком поздно для ютуба, пора спать.
+        {% else %}Закрываю ютуб: сейчас перерыв. До конца перерыва {{ left }} {{ unit }}.
+        {% endif %}
+    sequence:
+      - action: media_player.play_media
+        target:
+          entity_id:
+            - media_player.yandex_station_ff98f029d7407353fb617159
+            - media_player.yandex_station_lg0000000000001122190000a5c43d60
+        data:
+          media_content_type: text
+          media_content_id: "{{ text | trim }}"

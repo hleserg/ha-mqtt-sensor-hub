@@ -251,10 +251,15 @@ with `host_mqtt.py`; HASS.Agent publishes no sensors.
 It needs two HASS.Agent entities, added in the agent's GUI:
 - sensor ActiveWindow, entity name `activewindow`, interval 5 s
   (→ `sensor.bigpc_agent_activewindow`);
-- command PowerShell, type button, entity name `yt_close`, command
-  `C:\Users\Serg\AppData\Local\HASS.Agent\yt-close.ps1` (copy of
-  `tools/yt-close.ps1`). HA passes the message as the command's action
-  (`homeassistant/button/bigpc_agent/yt_close/action`).
+- command PowerShell, type button, entity name `yt_close`; the command text is
+  the whole body of `tools/yt-close.ps1`, pasted inline. A path to a `.ps1`
+  does nothing: bigpc's execution policy is AllSigned, and only inline
+  commands (run via `-EncodedCommand`) get past it. HA presses
+  `button.bigpc_agent_yt_close`.
+
+When it closes the tab, `script.youtube_limit_say` tells both stations how many
+minutes of the break are left; before 07:00 it says it is time to sleep. It
+speaks at most once every 2 minutes.
 
 Adding a `counter` or `history_stats` entity needs an HA restart; reload does not pick them up.
 

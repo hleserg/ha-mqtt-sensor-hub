@@ -5,8 +5,8 @@
 #  UPS — через файл службы x1202-guard. Настройки публикатора:
 #  /etc/default/betapi-mqtt на BetaPi.
 #
-#  Алерты — template event (device_class button, как у лисёнка): их видит
-#  yandex_smart_home, а в сценарии Алисы «когда нажата кнопка X — скажи Y».
+#  Алерты — template event; их озвучивает hosts_alert_speak (hosts.yaml).
+#  В yandex_smart_home их нет (убраны 02.10).
 #  Пороги алертов — здесь, в триггерах ниже.
 # =============================================================================
 mqtt:
@@ -159,9 +159,9 @@ mqtt:
       entity_category: diagnostic
       device: *betapi
 
-# Алерты. Каждый — отдельная «кнопка» для своего сценария Алисы.
+# Алерты. Озвучивает hosts_alert_speak (hosts.yaml).
 # Условие from_state != unavailable/unknown — чтобы рестарт HA или публикатора
-# не будил Алису.
+# не будил станции.
 template:
   - triggers:
       - trigger: state
