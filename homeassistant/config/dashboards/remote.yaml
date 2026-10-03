@@ -112,3 +112,40 @@ views:
           - counter.youtube_streak
           - counter.youtube_cycle
           - timer.youtube_break
+
+      # Медиаклавиши Windows через HASS.Agent: действуют на то, что играет на
+      # bigpc (браузер, плеер). Суффикс _2 — живые entity; без суффикса —
+      # сироты первой установки агента, unavailable.
+      - type: grid
+        columns: 3
+        square: false
+        cards:
+          - &pc
+            type: button
+            name: Назад
+            icon: mdi:skip-previous
+            show_state: false
+            tap_action: &press
+              action: perform-action
+              perform_action: button.press
+              target: { entity_id: button.bigpc_agent_previous_2 }
+          - <<: *pc
+            name: Пауза
+            icon: mdi:play-pause
+            tap_action: { <<: *press, target: { entity_id: button.bigpc_agent_play_pause_2 } }
+          - <<: *pc
+            name: Вперёд
+            icon: mdi:skip-next
+            tap_action: { <<: *press, target: { entity_id: button.bigpc_agent_next_2 } }
+          - <<: *pc
+            name: Тише
+            icon: mdi:volume-minus
+            tap_action: { <<: *press, target: { entity_id: button.bigpc_agent_volume_down_2 } }
+          - <<: *pc
+            name: Без звука
+            icon: mdi:volume-mute
+            tap_action: { <<: *press, target: { entity_id: button.bigpc_agent_mute_2 } }
+          - <<: *pc
+            name: Громче
+            icon: mdi:volume-plus
+            tap_action: { <<: *press, target: { entity_id: button.bigpc_agent_volume_up_2 } }
