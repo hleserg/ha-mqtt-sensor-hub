@@ -149,3 +149,42 @@ views:
             name: Громче
             icon: mdi:volume-plus
             tap_action: { <<: *press, target: { entity_id: button.bigpc_agent_volume_up_2 } }
+
+      # Остальные команды HASS.Agent и свет компа.
+      - type: grid
+        columns: 2
+        square: false
+        cards:
+          - <<: *pc
+            name: Монитор выкл
+            icon: mdi:monitor-off
+            tap_action: { <<: *press, target: { entity_id: button.bigpc_agent_monitor_off_2 } }
+          - <<: *pc
+            name: Монитор вкл
+            icon: mdi:monitor
+            tap_action: { <<: *press, target: { entity_id: button.bigpc_agent_monitor_on_2 } }
+          - <<: *pc
+            name: Открыть YouTube
+            icon: mdi:youtube
+            tap_action: { <<: *press, target: { entity_id: button.bigpc_agent_youtube_2 } }
+          - <<: *pc
+            name: Закрыть YouTube
+            icon: mdi:close-box
+            tap_action: { <<: *press, target: { entity_id: button.bigpc_agent_yt_close } }
+          - type: tile
+            entity: light.podsvetka_kompa
+            features: [{ type: light-brightness }]
+          - type: tile
+            entity: input_boolean.svetomuzyka
+
+      - type: entities
+        title: Состояние bigpc
+        entities:
+          - binary_sensor.bigpc_online
+          - sensor.bigpc_agent_activewindow
+          - sensor.bigpc_cpu_used_pct
+          - sensor.bigpc_ram_used_pct
+          - sensor.bigpc_gpu_used_pct
+          - sensor.bigpc_gpu_temp
+          - sensor.bigpc_disk_free_gb
+          - sensor.bigpc_boot_time
