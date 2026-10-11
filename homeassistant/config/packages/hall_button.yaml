@@ -3,7 +3,7 @@
 # Топик по friendly_name — переименуешь устройство в z2m, поправь и здесь.
 #
 # короткое — свет в прихожей и коридоре: горит хоть одна → гасим все, иначе включаем;
-# двойное — Mi TV и кондиционер выкл;
+# двойное — Mi TV выкл;
 # долгое — весь свет в квартире выкл (индикаторы кормушки и камеры не трогаем).
 automation:
   - id: hall_button
@@ -24,12 +24,8 @@ automation:
             sequence:
               - action: media_player.turn_off
                 target: { entity_id: media_player.tv_pristavka_mi_tv_stick_2 }
-                continue_on_error: true
-              # ponytail: ИК-кадр Kelon с битом PowerToggle — это переключатель,
-              # выключенный кондиционер он включит. Своего «выкл» в протоколе нет;
-              # нужна розетка с замером тока на кондиционере, тогда жать по состоянию.
-              - action: button.press
-                target: { entity_id: button.ir_blaster_ac_power }
+              # Кондиционер сюда не добавлять вслепую: ИК-кадр Kelon «AC Power» —
+              # PowerToggle, выключенный он включит. Нужна розетка с замером тока.
           - conditions: "{{ trigger.payload == 'off' }}"
             sequence:
               - action: light.turn_off
