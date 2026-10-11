@@ -1,0 +1,48 @@
+# Zigbee-кнопка Lincukoo CZB01 (0xa4c13846f2241e0e), прихожая.
+# z2m шлёт в .../action строку: короткое = toggle, двойное = on, долгое = off.
+# Топик по friendly_name — переименуешь устройство в z2m, поправь и здесь.
+#
+# короткое — свет в прихожей и коридоре: горит хоть одна → гасим все, иначе включаем;
+# двойное — Mi TV и кондиционер выкл;
+# долгое — весь свет в квартире выкл (индикаторы кормушки и камеры не трогаем).
+automation:
+  - id: hall_button
+    alias: "Кнопка в прихожей"
+    mode: queued
+    triggers:
+      - trigger: mqtt
+        topic: zigbee2mqtt/0xa4c13846f2241e0e/action
+    variables:
+      hall: [light.prihozhaya, light.svet_v_koridore]
+    actions:
+      - choose:
+          - conditions: "{{ trigger.payload == 'toggle' }}"
+            sequence:
+              - action: "light.turn_{{ 'off' if hall | select('is_state', 'on') | list else 'on' }}"
+                target: { entity_id: "{{ hall }}" }
+          - conditions: "{{ trigger.payload == 'on' }}"
+            sequence:
+              - action: media_player.turn_off
+                target: { entity_id: media_player.tv_pristavka_mi_tv_stick_2 }
+                continue_on_error: true
+              # ponytail: ИК-кадр Kelon с битом PowerToggle — это переключатель,
+              # выключенный кондиционер он включит. Своего «выкл» в протоколе нет;
+              # нужна розетка с замером тока на кондиционере, тогда жать по состоянию.
+              - action: button.press
+                target: { entity_id: button.ir_blaster_ac_power }
+          - conditions: "{{ trigger.payload == 'off' }}"
+            sequence:
+              - action: light.turn_off
+                target:
+                  entity_id:
+                    - light.prihozhaya
+                    - light.svet_v_koridore
+                    - light.torsher
+                    - light.piratskaia_liustra_gruppa
+                    - light.lisenok_nochnik
+                    - light.podsvetka_kompa
+                    - light.kuhnya_lyustra_1
+                    - light.kukhnia_lampochki_nad_stenoi
+                    - light.svet_v_vannoi
+                    - light.vannaia_lampochka_nad_mashinkoi
+                    - light.lampochka_nad_tualetom
