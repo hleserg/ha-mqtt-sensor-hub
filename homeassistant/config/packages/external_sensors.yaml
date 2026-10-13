@@ -114,7 +114,7 @@ rest_command:
   rf433_send:
     # Адрес ноды прибит намеренно: он же прибит в DEPLOY.md и TODO L3, а
     # лишняя переменная тут — это ещё одно место, где адрес может разъехаться.
-    url: "http://192.168.1.48/rf"
+    url: "http://192.168.20.48/rf"
     method: POST
     content_type: "application/json"
     # Тело собрали ворота из сырья ноды и не пересобирали: у ноды нет
@@ -223,7 +223,7 @@ automation:
 #  запросу и сознательно не делает заранее: это ещё одна прошивка и ещё одна
 #  перезагрузка ради проблемы, которой пока нет.
 rest:
-  - resource: "http://192.168.1.48/rf/captured?limit=1"
+  - resource: "http://192.168.20.48/rf/captured?limit=1"
     scan_interval: 300
     timeout: 10
     sensor:
