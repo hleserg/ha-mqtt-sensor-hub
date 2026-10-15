@@ -1,0 +1,8 @@
+# Алиса (yandex_smart_home): переопределения устройств. Фильтр — в UI интеграции.
+# Кнопку интеграция отдаёт как devices.types.other, а «открой» Алиса понимает
+# только у openable. Новый тип в Алисе — после «Обновить список устройств».
+yandex_smart_home:
+  entity_config:
+    button.living_room_ir_blaster_cupboard_open:
+      name: Шкаф
+      type: devices.types.openable

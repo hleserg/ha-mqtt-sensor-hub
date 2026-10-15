@@ -153,9 +153,9 @@ refused.
 ## Frigate (runs on bigpc, not doctor)
 
 NVR and object detection for the iFEEL camera (192.168.1.141) live on bigpc
-(192.168.1.146) for its GPU, inside WSL2 Ubuntu, in `/mnt/nvme/frigate`:
+(192.168.1.10) for its GPU, inside WSL2 Ubuntu, in `/mnt/nvme/frigate`:
 `docker-compose.yml`, `.env` (camera, MQTT and Frigate `admin` passwords,
-mode 600), `config/config.yml`, `media/`. UI: <https://192.168.1.146:8971>
+mode 600), `config/config.yml`, `media/`. UI: <https://192.168.1.10:8971>
 (self-signed certificate), user `admin`.
 
 ```sh
@@ -172,7 +172,7 @@ by Frigate; `/mnt/nvme/frigate/export-yolov9.sh` builds it (docker build, took
 ~2 h on 2026-09-26 because the ISP throttles PyPI). Lose it and detection stops.
 
 It talks to this stack only over MQTT (`frigate` user, `frigate/#`); HA reads
-it through the Frigate custom component, pointed at `https://192.168.1.146:8971`.
+it through the Frigate custom component, pointed at `https://192.168.1.10:8971`.
 
 **A new WSL port is not on the LAN until the owner's portproxy task runs.** The
 scheduled task `WSL LAN portproxy` republishes every `0.0.0.0` WSL port, but only
@@ -184,7 +184,7 @@ every 30 minutes, and WSL's address changes on reboot. If HA shows Frigate
 
 `light.podsvetka_kompa` is the MSI MAG Z790 TOMAHAWK WIFI Mystic Light
 (USB 1462:7D91), served by OpenRGB 1.0 on bigpc and read by the core HA
-`openrgb` integration («Большой комп», 192.168.1.146:6742). OpenRGB lives in
+`openrgb` integration («Большой комп», 192.168.1.10:6742). OpenRGB lives in
 `C:\Program Files\OpenRGB` and runs as the scheduled task `OpenRGB server`
 (SYSTEM, at startup +30 s): `--server --server-host 0.0.0.0 --startminimized`.
 Without `--server-host` it listens on 127.0.0.1 only. Its config and logs are in
