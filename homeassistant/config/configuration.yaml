@@ -99,3 +99,14 @@ lovelace:
 automation: !include automations.yaml
 script: !include scripts.yaml
 scene: !include scenes.yaml
+
+# Станции живут в IoT-сегменте 192.168.20.0/24, а mDNS оттуда до doctor не
+# доходит: без адресов интеграция работает только через облако (assumed_state,
+# нет alice_state, media_title и «playing» — светомузыке не за что держаться).
+# Адреса надо закрепить в DHCP роутера, иначе после смены IP снова облако.
+yandex_station:
+  devices:
+    ff98f029d7407353fb617159:            # Яндекс Мини
+      host: 192.168.20.109
+    lg0000000000001122190000a5c43d60:    # Яндекс Лайт
+      host: 192.168.20.33
