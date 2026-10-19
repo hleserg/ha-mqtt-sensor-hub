@@ -136,7 +136,15 @@
     to: 'off'
     for: 00:01:00
     id: empty
-  conditions: []
+  conditions: &not_away
+  # Дома пусто (packages/doma.yaml) — только гасим
+  - condition: or
+    conditions:
+    - condition: trigger
+      id: empty
+    - condition: state
+      entity_id: input_boolean.doma_pusto
+      state: 'off'
   actions:
   - choose:
     - conditions:
@@ -192,7 +200,7 @@
     to: 'off'
     for: 00:01:00
     id: empty
-  conditions: []
+  conditions: *not_away
   actions:
   - choose:
     - conditions:

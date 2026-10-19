@@ -1,0 +1,71 @@
+# Режим «Дома пусто» / «Дома кто-то есть» — input_boolean.doma_pusto.
+#
+# Включают: долгое нажатие кнопки в прихожей (hall_button.yaml) или вручную.
+#   Тогда гаснет всё, кроме компов, их агентов, серверной розетки, мультиварки,
+#   камер, кормушки и кондиционера (его ИК — переключатель, см. hall_button.yaml).
+# Выключают: двойное нажатие той же кнопки или телефон, зашедший в домашнюю
+#   Wi-Fi (sensor.mobilnik_wi_fi_connection_2 = !secret home_wifi_ssid), если пусто
+#   уже 15 минут: пока уходишь, телефон ещё ловит сеть у подъезда.
+#
+# Пока пусто, свет по датчикам не включается: в автоматизациях по датчикам
+# (automations.yaml: bath_presence_v1, hall_presence_v1) включение — только при
+# doma_pusto = off, выключение — всегда. Новым датчикам — то же условие.
+
+input_boolean:
+  doma_pusto:
+    name: Дома пусто
+    icon: mdi:home-export-outline
+
+automation:
+  - id: doma_pusto_vse_vykl
+    alias: "Дома пусто — всё выкл"
+    mode: single
+    triggers:
+      - trigger: state
+        entity_id: input_boolean.doma_pusto
+        from: "off"
+        to: "on"
+    actions:
+      - action: media_player.media_pause
+        continue_on_error: true
+        target:
+          entity_id:
+            - media_player.yandex_station_ff98f029d7407353fb617159
+            - media_player.yandex_station_lg0000000000001122190000a5c43d60
+      # ТВ и HT по ИК, только если горят (packages/tv.yaml)
+      - action: script.tv_off
+        continue_on_error: true
+      - action: script.ves_svet_vykl
+
+  - id: doma_kto_to_est
+    alias: "Дома кто-то есть — свет в прихожей, если там движение"
+    mode: single
+    triggers:
+      - trigger: state
+        entity_id: input_boolean.doma_pusto
+        from: "on"
+        to: "off"
+    conditions:
+      - condition: state
+        entity_id: binary_sensor.0xa4c138e91ed0ad14_occupancy
+        state: "on"
+    actions:
+      # Движение уже идёт — нового «on» от датчика не будет, зажигаем сами
+      - action: automation.trigger
+        target: { entity_id: automation.prikhozhaia_i_koridor_po_dvizheniiu }
+
+  - id: doma_pusto_telefon_doma
+    alias: "Телефон в домашней Wi-Fi — дома кто-то есть"
+    mode: single
+    triggers:
+      - trigger: state
+        entity_id: sensor.mobilnik_wi_fi_connection_2
+        to: !secret home_wifi_ssid
+    conditions:
+      - condition: state
+        entity_id: input_boolean.doma_pusto
+        state: "on"
+        for: { minutes: 15 }
+    actions:
+      - action: input_boolean.turn_off
+        target: { entity_id: input_boolean.doma_pusto }

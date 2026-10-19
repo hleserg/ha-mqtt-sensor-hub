@@ -3,9 +3,9 @@
 # Топик по friendly_name — переименуешь устройство в z2m, поправь и здесь.
 #
 # короткое — свет в прихожей и коридоре: горит хоть одна → гасим все, иначе включаем;
-# долгое  — весь свет в квартире выкл (script.ves_svet_vykl);
-# двойное — уходим/спать: весь свет, лисёнок, светомузыка, музыка на станциях, Mi TV.
-#   Компы, их агенты, серверная розетка, мультиварка, камеры и кормушка — не трогаем.
+# долгое  — «Дома пусто»: весь свет, лисёнок, светомузыка, музыка на станциях,
+#   ТВ и HT; свет по датчикам больше не включается (packages/doma.yaml);
+# двойное — «Дома кто-то есть».
 automation:
   - id: hall_button
     alias: "Кнопка в прихожей"
@@ -21,28 +21,17 @@ automation:
             sequence:
               - action: "light.turn_{{ 'off' if hall | select('is_state', 'on') | list else 'on' }}"
                 target: { entity_id: "{{ hall }}" }
+          # Что гаснет — packages/doma.yaml. Кондиционер туда не добавлять вслепую:
+          # ИК-кадр Kelon «AC Power» — PowerToggle, выключенный он включит.
+          # Нужна розетка с замером тока.
           - conditions: "{{ trigger.payload == 'off' }}"
             sequence:
-              - action: script.ves_svet_vykl
+              - action: input_boolean.turn_on
+                target: { entity_id: input_boolean.doma_pusto }
           - conditions: "{{ trigger.payload == 'on' }}"
             sequence:
-              - action: media_player.media_pause
-                continue_on_error: true
-                target:
-                  entity_id:
-                    - media_player.yandex_station_ff98f029d7407353fb617159
-                    - media_player.yandex_station_lg0000000000001122190000a5c43d60
-              # Приставка питается от телевизора: он выключен — её нет в сети,
-              # команда уходит в никуда, это нормально.
-              - action: remote.turn_off
-                continue_on_error: true
-                target: { entity_id: remote.tv_pristavka_mi_tv_stick }
-              - action: media_player.turn_off
-                continue_on_error: true
-                target: { entity_id: media_player.tv_pristavka_mi_tv_stick_2 }
-              # Кондиционер сюда не добавлять вслепую: ИК-кадр Kelon «AC Power» —
-              # PowerToggle, выключенный он включит. Нужна розетка с замером тока.
-              - action: script.ves_svet_vykl
+              - action: input_boolean.turn_off
+                target: { entity_id: input_boolean.doma_pusto }
 
 script:
   ves_svet_vykl:
