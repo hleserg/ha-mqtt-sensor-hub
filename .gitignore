@@ -38,3 +38,11 @@ backups/
 
 # graft's local graph cache — regenerable, not committed (run `graft build`).
 /graft/
+
+# --- matter-server: fabric credentials and node state, never commit ---
+matter-server/data/
+
+# --- hand-made backups next to the live file (may hold secrets) ---
+*.bak
+*.bak-*
+*.bak.*
