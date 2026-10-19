@@ -2,8 +2,8 @@
 #  Светомузыка: «Алиса, включи светомузыку»
 # =============================================================================
 #  input_boolean.svetomuzyka выставлен в Алису устройством «Светомузыка».
-#  Включили — HA берёт станцию, которая последней слушала (≤ 60 с назад; иначе
-#  Мини), и свет её комнаты: Комната — 4 лампы «Пиратской люстры», каждая своим
+#  Включили — HA берёт станцию, которая ответила на фразу (обе просыпаются,
+#  отвечает одна; ≤ 60 с назад, иначе Мини), и свет её комнаты: Комната — 4 лампы «Пиратской люстры», каждая своим
 #  цветом, бегущими огнями (1+3, потом 2+4); гасит z2m-группа «Пиратская люстра
 #  группа». Кухня — «Кухня люстра 1» (остальные там только вкл/выкл).
 #  Станция играет — музыку не трогает, только свет; молчит 5 с — «включи мою волну».
@@ -44,19 +44,35 @@ template:
           - media_player.yandex_station_lg0000000000001122190000a5c43d60
         attribute: alice_state
         to: LISTENING
-    # One phrase wakes both stations: the one that heard it first, the other
-    # 0.05–0.5 s later (measured 02.10). The first one wins.
+        id: heard
+      - trigger: state
+        entity_id:
+          - media_player.yandex_station_ff98f029d7407353fb617159
+          - media_player.yandex_station_lg0000000000001122190000a5c43d60
+        attribute: alice_state
+        to: [BUSY, SPEAKING]
+        id: answered
+    # One phrase wakes both stations, 0.05–0.5 s apart (measured 02.10), and the
+    # first LISTENING is often the wrong room (19.10: said in the room, kitchen
+    # heard first). Only the station Alice answers from goes on to BUSY/SPEAKING:
+    # that one overrides the first LISTENING, once per phrase.
     conditions:
       - >-
-        {{ state_attr('sensor.alisa_slushala', 'at') is none or
-           now() - as_datetime(state_attr('sensor.alisa_slushala', 'at')) > timedelta(seconds=3) }}
+        {% set at = state_attr('sensor.alisa_slushala', 'at') %}
+        {% set age = now() - as_datetime(at) if at else none %}
+        {{ age is none or age > timedelta(seconds=3) if trigger.id == 'heard' else
+           age is not none and age < timedelta(seconds=15)
+           and not state_attr('sensor.alisa_slushala', 'answered') }}
     sensor:
       - name: Алиса слушала
         unique_id: alice_last_heard
         icon: mdi:ear-hearing
         state: "{{ trigger.entity_id }}"
         attributes:
-          at: "{{ now().isoformat() }}"
+          at: >-
+            {{ now().isoformat() if trigger.id == 'heard'
+               else state_attr('sensor.alisa_slushala', 'at') }}
+          answered: "{{ trigger.id == 'answered' }}"
 
 automation:
   - id: light_music
@@ -67,6 +83,13 @@ automation:
         entity_id: input_boolean.svetomuzyka
         to: "on"
     actions:
+      # Alice switches the device on before or while she answers: give the
+      # answering station up to 4 s to show itself.
+      - wait_template: >-
+          {% set at = state_attr('sensor.alisa_slushala', 'at') %}
+          {{ state_attr('sensor.alisa_slushala', 'answered')
+             or not at or now() - as_datetime(at) > timedelta(seconds=60) }}
+        timeout: 4
       - variables:
           mini: media_player.yandex_station_ff98f029d7407353fb617159
           heard_at: "{{ state_attr('sensor.alisa_slushala', 'at') }}"
