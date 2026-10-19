@@ -3,6 +3,7 @@
 # =============================================================================
 #  Кнопка = remote.send_command с кодом клавиши Android TV. Удержание OK —
 #  долгое нажатие (меню приложения). Громкость стик передаёт телевизору по CEC.
+#  «Питание» — script.tv_power: ТВ и HT по ИК, стик не усыпляет (packages/tv.yaml).
 #  Клавиатуры здесь нет — для поиска текстом приложение Google TV на телефоне.
 # =============================================================================
 
@@ -68,7 +69,10 @@ views:
           - <<: *key
             name: Питание
             icon: mdi:power
-            tap_action: { <<: *send, data: { command: POWER } }
+            # ТВ и HT по ИК, стик остаётся в сети (packages/tv.yaml)
+            tap_action:
+              action: perform-action
+              perform_action: script.tv_power
           - <<: *key
             name: Без звука
             icon: mdi:volume-off

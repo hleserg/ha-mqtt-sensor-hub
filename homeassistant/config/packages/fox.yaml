@@ -152,5 +152,4 @@ automation:
     conditions:
       - "{{ trigger.to_state.attributes.event_type == 'long_press' }}"
     actions:
-      - action: remote.turn_off
-        target: { entity_id: remote.tv_pristavka_mi_tv_stick }
+      - action: script.tv_off   # packages/tv.yaml

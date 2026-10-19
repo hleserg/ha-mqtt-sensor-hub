@@ -1,0 +1,175 @@
+# Телевизор, домашний кинотеатр (HT) и Mi TV Stick в гостиной.
+# У стика свой БП, но кнопкой питания он засыпает глубоко: Wi-Fi гаснет
+# (remote… unavailable), разбудить можно только его BT-пультом. Поэтому HA
+# стик не усыпляет: гасит ТВ и HT по ИК, стик остаётся в сети. На стике в
+# «HDMI-CEC» выключено автовыключение — иначе он уснёт вслед за ТВ.
+# ИК-коды «HT Power» и «TV Power» — переключатели, состояния не знают:
+# горит ли телевизор, помнит input_boolean.televizor. Кнопка питания на пульте
+# стика (всё гаснет и всё загорается по CEC) отслеживается по стику.
+#
+# script.tv_power — кнопка «Питание» на пульте в HA (dashboards/remote.yaml).
+# media_player.televizor — «Телевизор» для Алисы: включи/выключи, громче/тише,
+#   пауза/продолжи. Отдан Алисе фильтром в UI интеграции yandex_smart_home.
+# tv_alice_volume — просто «Алиса, громче/тише» Мини, пока телевизор горит,
+#   а сама Мини ничего не играет: громкость уходит телевизору.
+#   Голое «Алиса, пауза» так не перехватить: Мини, которой нечего ставить на
+#   паузу, ничего не меняет — HA не за что зацепиться. Говорить «пауза на
+#   телевизоре», «продолжи на телевизоре».
+
+input_boolean:
+  televizor:
+    name: Телевизор горит
+    icon: mdi:television
+
+media_player:
+  - platform: universal
+    name: Телевизор
+    unique_id: tv_living_room
+    children:
+      - media_player.tv_pristavka_mi_tv_stick_2
+    state_template: "{{ states('input_boolean.televizor') }}"
+    commands:
+      turn_on: { action: script.tv_on }
+      turn_off: { action: script.tv_off }
+      volume_up:
+        action: script.tv_volume
+        data: { steps: 1 }
+      volume_down:
+        action: script.tv_volume
+        data: { steps: -1 }
+
+script:
+  tv_on:
+    alias: "Телевизор: включить"
+    icon: mdi:television
+    mode: single
+    max_exceeded: silent
+    sequence:
+      - condition: state
+        entity_id: input_boolean.televizor
+        state: "off"
+      # Стик в сети, но спит — будим, ТВ и HT он включит по CEC
+      - if: "{{ is_state('remote.tv_pristavka_mi_tv_stick', 'off') }}"
+        then:
+          - action: remote.turn_on
+            continue_on_error: true
+            target: { entity_id: remote.tv_pristavka_mi_tv_stick }
+          - wait_template: "{{ is_state('remote.tv_pristavka_mi_tv_stick', 'on') }}"
+            timeout: 15
+          - if: "{{ wait.completed }}"
+            then:
+              - stop: "Стик проснулся"
+      - action: button.press
+        target: { entity_id: button.living_room_ir_blaster_ht_power }
+      - delay: 1
+      - action: button.press
+        target: { entity_id: button.living_room_ir_blaster_tv_power }
+      - action: input_boolean.turn_on
+        target: { entity_id: input_boolean.televizor }
+
+  tv_off:
+    alias: "Телевизор: выключить"
+    icon: mdi:television-off
+    mode: single
+    max_exceeded: silent
+    sequence:
+      - condition: state
+        entity_id: input_boolean.televizor
+        state: "on"
+      # Ролик на погашенном экране не нужен; стик остаётся в сети
+      - action: remote.send_command
+        continue_on_error: true
+        target: { entity_id: remote.tv_pristavka_mi_tv_stick }
+        data: { command: MEDIA_PAUSE }
+      - action: button.press
+        target: { entity_id: button.living_room_ir_blaster_ht_power }
+      - delay: 1
+      - action: button.press
+        target: { entity_id: button.living_room_ir_blaster_tv_power }
+      - action: input_boolean.turn_off
+        target: { entity_id: input_boolean.televizor }
+
+  tv_power:
+    alias: "Телевизор: питание"
+    icon: mdi:power
+    mode: single
+    max_exceeded: silent
+    sequence:
+      - action: "script.tv_{{ 'off' if is_state('input_boolean.televizor', 'on') else 'on' }}"
+
+  tv_volume:
+    alias: "Телевизор: громкость"
+    icon: mdi:volume-high
+    mode: queued
+    fields:
+      steps: { description: "Шаги громкости Алисы: +1 громче, -2 на два тише" }
+    variables:
+      per_step: 3   # нажатий громкости HT на один шаг Алисы
+    sequence:
+      - if: "{{ steps | int(0) != 0 }}"
+        then:
+          - action: remote.send_command
+            target: { entity_id: remote.tv_pristavka_mi_tv_stick }
+            data:
+              command: "{{ 'VOLUME_UP' if steps | int > 0 else 'VOLUME_DOWN' }}"
+              num_repeats: "{{ [steps | int | abs * per_step, 15] | min }}"
+              delay_secs: 0.15
+
+automation:
+  # Пульт стика: проснулся — CEC зажёг ТВ и HT, уснул — погасил
+  - id: tv_stick_power_sync
+    alias: "Телевизор горит — по кнопке питания на пульте стика"
+    mode: queued
+    triggers:
+      - trigger: state
+        entity_id: remote.tv_pristavka_mi_tv_stick
+        from: ["off", "unavailable"]
+        to: "on"
+        id: "on"
+      - trigger: state
+        entity_id: remote.tv_pristavka_mi_tv_stick
+        from: "on"
+        to: "off"
+        id: "off"
+      # Короткий обрыв Wi-Fi — не сон
+      - trigger: state
+        entity_id: remote.tv_pristavka_mi_tv_stick
+        from: "on"
+        to: "unavailable"
+        for: { minutes: 2 }
+        id: "off"
+    conditions:
+      # Старт HA: unavailable → on — не пробуждение
+      - "{{ trigger.from_state.state != 'unavailable'
+            or (now() - trigger.from_state.last_changed).total_seconds() > 60 }}"
+    actions:
+      - action: "input_boolean.turn_{{ trigger.id }}"
+        target: { entity_id: input_boolean.televizor }
+
+  - id: tv_alice_volume
+    alias: "Алиса громче/тише — телевизору, пока он горит"
+    mode: single
+    max_exceeded: silent
+    triggers:
+      - trigger: state
+        entity_id: media_player.yandex_station_ff98f029d7407353fb617159
+        attribute: volume_level
+    conditions:
+      - "{{ trigger.from_state.attributes.volume_level is number
+            and trigger.to_state.attributes.volume_level is number }}"
+      # Голосом или приложением Яндекса; свои volume_set HA — с context от HA
+      - "{{ trigger.to_state.context.parent_id is none and trigger.to_state.context.user_id is none }}"
+      # Android TV Remote не знает, играет ли что-то: «горит» = телевизор включён.
+      # Мини играет сама — громкость её.
+      - "{{ is_state('input_boolean.televizor', 'on') and not is_state(trigger.entity_id, 'playing') }}"
+    variables:
+      delta: >-
+        {{ ((trigger.to_state.attributes.volume_level
+             - trigger.from_state.attributes.volume_level) * 10) | round | int }}
+    actions:
+      - action: media_player.volume_set
+        target: { entity_id: "{{ trigger.entity_id }}" }
+        data: { volume_level: "{{ trigger.from_state.attributes.volume_level }}" }
+      - action: script.tv_volume
+        data: { steps: "{{ delta }}" }
+      - delay: 2   # эхо своего volume_set — не новый запуск

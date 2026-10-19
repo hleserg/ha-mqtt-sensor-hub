@@ -6,3 +6,6 @@ yandex_smart_home:
     button.living_room_ir_blaster_cupboard_open:
       name: Шкаф
       type: devices.types.openable
+    media_player.televizor:   # packages/tv.yaml
+      name: Телевизор
+      type: devices.types.media_device.tv
