@@ -211,6 +211,11 @@
         after: 02:00:00
         before: 06:00:00
       sequence:
+      # «Свет в коридоре» (eWeLink CK-BL702) из выключенного не включается
+      # командой с яркостью: сначала голое on, потом цвет.
+      - action: light.turn_on
+        target:
+          entity_id: light.svet_v_koridore
       - action: light.turn_on
         target:
           entity_id:
@@ -223,6 +228,9 @@
           - 224
           brightness_pct: 60
     default:
+    - action: light.turn_on
+      target:
+        entity_id: light.svet_v_koridore
     - action: light.turn_on
       target:
         entity_id:
