@@ -1,0 +1,9 @@
+# iot-stack — Zigbee2MQTT watchdog.  Installed to /etc/cron.d/iot-stack-z2m-watchdog.
+#
+# Restarts the bridge when zigbee2mqtt/bridge/state says offline but the
+# container is still up — the hang that `restart: unless-stopped` cannot see.
+# See scripts/z2m-watchdog.sh.
+MAILTO=""
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+*/5 * * * * sergey /home/sergey/iot-stack/scripts/z2m-watchdog.sh >> /home/sergey/iot-stack-z2m-watchdog.log 2>&1

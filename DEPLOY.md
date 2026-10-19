@@ -140,8 +140,9 @@ sudo systemctl enable --now iot-stack-firewall
 ```
 
 **Edit the paths first if you did not clone to `/home/sergey/iot-stack`** —
-`iot-stack-firewall.service` and `cron/iot-stack-backup` both carry that
-absolute path. They are the only two files in the repository that do.
+`iot-stack-firewall.service`, `cron/iot-stack-backup` and
+`cron/iot-stack-z2m-watchdog` carry that absolute path. They are the only
+files in the repository that do.
 
 Allowed source networks are read from `firewall/allowed-subnets.conf` at apply
 time; add a WireGuard client range there rather than editing the script.
@@ -176,6 +177,14 @@ integration does once it is there.
 ./scripts/backup.sh            # config only, no credentials
 ./scripts/backup.sh --full     # + history + secrets — treat the archive as a secret
 sudo cp cron/iot-stack-backup /etc/cron.d/iot-stack-backup   # daily 04:30
+```
+
+Zigbee2MQTT can hang after a coordinator failure instead of exiting, which
+Docker's restart policy does not see. The watchdog restarts it when
+`zigbee2mqtt/bridge/state` says offline:
+
+```sh
+sudo cp cron/iot-stack-z2m-watchdog /etc/cron.d/iot-stack-z2m-watchdog   # every 5 min
 ```
 
 The default target is `/mnt/backup/iot-stack`; change it in `scripts/backup.sh`
@@ -225,7 +234,7 @@ deployment this repository documents:
 |---|---|---|
 | `192.168.1.51` | docs, `esphome/own-sensor-reference.yaml`, `tools/*.py` | the host's LAN address |
 | `LAN_SUBNET` | `.env` | used by the firewall script |
-| Absolute path `/home/sergey/iot-stack` | `firewall/iot-stack-firewall.service`, `cron/iot-stack-backup` | edit both if you clone elsewhere |
+| Absolute path `/home/sergey/iot-stack` | `firewall/iot-stack-firewall.service`, `cron/iot-stack-backup`, `cron/iot-stack-z2m-watchdog` | edit all three if you clone elsewhere |
 | `TZ` | `.env` | defaults to `Europe/Moscow` |
 | NTP servers | `esphome/own-sensor-reference.yaml` | LAN servers on purpose — sensors must keep time without internet |
 | Docker subnet `172.28.0.0/24` | `docker-compose.yml` | changed only if it collides on your host |
@@ -260,7 +269,7 @@ docker compose down                  # keeps volumes
 docker compose down -v               # also drops retained MQTT state
 sudo systemctl disable --now iot-stack-firewall
 sudo ./firewall/docker-user-lan-only.sh remove
-sudo rm -f /etc/cron.d/iot-stack-backup /etc/systemd/system/iot-stack-firewall.service
+sudo rm -f /etc/cron.d/iot-stack-backup /etc/cron.d/iot-stack-z2m-watchdog /etc/systemd/system/iot-stack-firewall.service
 ```
 
 The firewall script confines itself to a dedicated `IOT-MQTT-LAN` chain plus one
