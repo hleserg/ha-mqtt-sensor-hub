@@ -471,18 +471,6 @@ template:
   # Без from: "on" — иначе рестарт HA (off → unavailable → off) теряет алерт.
   - triggers:
       - trigger: state
-        entity_id: binary_sensor.mc_server_online
-        to: "off"
-        for: {minutes: 5}
-    event:
-      - name: "mc-server: пропал из сети"
-        unique_id: mc_server_alert_offline
-        default_entity_id: event.mc_server_alert_offline
-        device_class: button
-        event_types: "{{ ['click'] }}"
-        event_type: "click"
-  - triggers:
-      - trigger: state
         entity_id: binary_sensor.bigpc_online
         to: "off"
         for: {minutes: 3}
@@ -608,7 +596,6 @@ automation:
     triggers:
       - trigger: state
         entity_id:
-          - event.mc_server_alert_offline
           - event.bigpc_alert_offline
           - event.mac_mini_alert_offline
           - event.doctor_alert_disk_full
@@ -657,7 +644,6 @@ automation:
     triggers:
       - trigger: state
         entity_id:
-          - binary_sensor.mc_server_online
           - binary_sensor.bigpc_online
           - binary_sensor.mac_mini_online
           - binary_sensor.betapi_online

@@ -1,149 +1,131 @@
-# Automations. Edit here or in the UI (the UI writes back to this file).
-
 - id: mqtt_round_trip_probe
-  alias: "MQTT round trip probe"
-  description: >
-    Publishes a timestamp to monitor/roundtrip once a minute and expects to
-    receive it back through the broker. sensor.mqtt_round_trip_age measures the
-    delay; binary_sensor.mqtt_round_trip_failing trips after three missed
-    cycles. This is the end-to-end check that HA <-> Mosquitto still works,
-    including authentication and the ACL.
+  alias: MQTT round trip probe
+  description: 'Publishes a timestamp to monitor/roundtrip once a minute and expects
+    to receive it back through the broker. sensor.mqtt_round_trip_age measures the
+    delay; binary_sensor.mqtt_round_trip_failing trips after three missed cycles.
+    This is the end-to-end check that HA <-> Mosquitto still works, including authentication
+    and the ACL.
+
+    '
   mode: single
   triggers:
-    - trigger: time_pattern
-      minutes: "/1"
-    - trigger: homeassistant
-      event: start
+  - trigger: time_pattern
+    minutes: /1
+  - trigger: homeassistant
+    event: start
   actions:
-    - action: mqtt.publish
-      data:
-        topic: monitor/roundtrip
-        payload: "{{ now().isoformat() }}"
-        qos: 0
-        retain: false
-
+  - action: mqtt.publish
+    data:
+      topic: monitor/roundtrip
+      payload: '{{ now().isoformat() }}'
+      qos: 0
+      retain: false
 - id: outdoor_station_went_stale
-  alias: "Outdoor station went stale or offline"
-  description: >
-    Logs a persistent notification when the outdoor weather station stops
+  alias: Outdoor station went stale or offline
+  description: 'Logs a persistent notification when the outdoor weather station stops
     reporting, so a silent sensor is never mistaken for calm weather.
+
+    '
   mode: single
   triggers:
-    - trigger: state
-      entity_id: sensor.outdoor_data_state
-      to: ["stale", "offline"]
-      for: "00:02:00"
+  - trigger: state
+    entity_id: sensor.outdoor_data_state
+    to:
+    - stale
+    - offline
+    for: 00:02:00
   actions:
-    - action: persistent_notification.create
-      data:
-        title: "Outdoor weather station: {{ states('sensor.outdoor_data_state') }}"
-        message: >
-          No fresh measurement for
-          {{ (states('sensor.outdoor_data_age') | float(0) / 60) | round(0) }} minutes.
-          Last measurement timestamp: {{ states('sensor.outdoor_last_update') }}.
-        notification_id: outdoor_station_stale
+  - action: persistent_notification.create
+    data:
+      title: 'Outdoor weather station: {{ states(''sensor.outdoor_data_state'') }}'
+      message: 'No fresh measurement for {{ (states(''sensor.outdoor_data_age'') |
+        float(0) / 60) | round(0) }} minutes. Last measurement timestamp: {{ states(''sensor.outdoor_last_update'')
+        }}.
 
+        '
+      notification_id: outdoor_station_stale
 - id: outdoor_station_recovered
-  alias: "Outdoor station recovered"
+  alias: Outdoor station recovered
   mode: single
   triggers:
-    - trigger: state
-      entity_id: sensor.outdoor_data_state
-      to: "fresh"
+  - trigger: state
+    entity_id: sensor.outdoor_data_state
+    to: fresh
   actions:
-    - action: persistent_notification.dismiss
-      data:
-        notification_id: outdoor_station_stale
-
-
+  - action: persistent_notification.dismiss
+    data:
+      notification_id: outdoor_station_stale
 - id: meshcore_mqtt_mirror
-  alias: "MeshCore -> MQTT mirror"
-  description: >
-    Republishes an allow-list of MeshCore node telemetry from the integration's
-    entities into meshcore/<node_id>/<metric>, retained, so consumers that have
-    no Home Assistant account (ESP32 watches, shell scripts) can read mesh
-    telemetry from the broker. The radio is owned by the integration inside HA,
-    so HA is necessarily the publisher here -- see DECISIONS.md D-011.
+  alias: MeshCore -> MQTT mirror
+  description: 'Republishes an allow-list of MeshCore node telemetry from the integration''s
+    entities into meshcore/<node_id>/<metric>, retained, so consumers that have no
+    Home Assistant account (ESP32 watches, shell scripts) can read mesh telemetry
+    from the broker. The radio is owned by the integration inside HA, so HA is necessarily
+    the publisher here -- see DECISIONS.md D-011.
 
-    Nodes are discovered from the entity ids rather than configured, so swapping
-    the Companion (the T114 handover) needs no edit here: a new public key
-    simply starts publishing under its own node id. Metrics are an explicit
-    list, never a loop over sensor.meshcore_*, because the integration exposes
-    ~190 entities on a busy mesh.
+    Nodes are discovered from the entity ids rather than configured, so swapping the
+    Companion (the T114 handover) needs no edit here: a new public key simply starts
+    publishing under its own node id. Metrics are an explicit list, never a loop over
+    sensor.meshcore_*, because the integration exposes ~190 entities on a busy mesh.
 
-    A metric whose state is unknown or unavailable is skipped rather than
-    published: writing "unknown" into a retained topic would destroy the last
-    good value that consumers rely on.
+    A metric whose state is unknown or unavailable is skipped rather than published:
+    writing "unknown" into a retained topic would destroy the last good value that
+    consumers rely on.
+
+    '
   mode: single
   max_exceeded: silent
   triggers:
-    - trigger: time_pattern
-      minutes: "/1"
-    - trigger: homeassistant
-      event: start
+  - trigger: time_pattern
+    minutes: /1
+  - trigger: homeassistant
+    event: start
   actions:
-    - variables:
-        jobs: |-
-          {%- set BAD = ['unknown', 'unavailable', 'none', 'None', ''] -%}
-          {%- set METRICS = [('battery', 'battery_percentage'),
-                             ('battery_voltage', 'battery_voltage'),
-                             ('status', 'node_status')] -%}
-          {%- set RADIO = [('frequency_mhz', 'frequency'),
-                           ('spreading_factor', 'spreading_factor'),
-                           ('bandwidth_khz', 'bandwidth'),
-                           ('tx_power_dbm', 'tx_power')] -%}
-          {%- set ns = namespace(ids=[], jobs=[]) -%}
-          {%- for s in states.sensor -%}
-            {%- set m = s.entity_id | regex_findall('^sensor\.meshcore_([0-9a-f]{6})_battery_voltage') -%}
-            {%- if m and m[0] not in ns.ids -%}{%- set ns.ids = ns.ids + [m[0]] -%}{%- endif -%}
-          {%- endfor -%}
-          {%- for node in ns.ids -%}
-            {%- set n = namespace(fresh=none, meta={}, any=false, anchor=none) -%}
-            {%- for leaf, src in METRICS -%}
-              {%- set cand = states.sensor | map(attribute='entity_id')
-                             | select('search', '^sensor\.meshcore_' ~ node ~ '_' ~ src ~ '(_|$)') | list -%}
-              {%- if cand and states(cand[0]) not in BAD -%}
-                {%- set ns.jobs = ns.jobs + [{'t': 'meshcore/' ~ node ~ '/' ~ leaf, 'p': states(cand[0])}] -%}
-                {%- set lu = states[cand[0]].last_updated -%}
-                {%- if n.fresh is none or lu > n.fresh -%}{%- set n.fresh = lu -%}{%- endif -%}
-                {%- set n.any = true -%}
-                {%- set n.anchor = cand[0] -%}
-              {%- endif -%}
-            {%- endfor -%}
-            {%- if n.any -%}
-              {%- for key, src in RADIO -%}
-                {%- set cand = states.sensor | map(attribute='entity_id')
-                               | select('search', '^sensor\.meshcore_' ~ node ~ '_' ~ src ~ '(_|$)') | list -%}
-                {%- if cand and states(cand[0]) not in BAD -%}
-                  {%- set n.meta = n.meta | combine({key: states(cand[0]) | float(default=0)}) -%}
-                {%- endif -%}
-              {%- endfor -%}
-              {%- set n.meta = n.meta | combine({
-                    'node_id': node,
-                    'name': device_attr(n.anchor, 'name_by_user') or device_attr(n.anchor, 'name') or node,
-                    'source': 'meshcore-ha',
-                    'transport': 'tcp'}) -%}
-              {%- set ns.jobs = ns.jobs + [{'t': 'meshcore/' ~ node ~ '/meta', 'p': n.meta | tojson}] -%}
-              {%- if n.fresh is not none -%}
-                {%- set ns.jobs = ns.jobs + [{'t': 'meshcore/' ~ node ~ '/last_seen', 'p': n.fresh.isoformat()}] -%}
-              {%- endif -%}
-            {%- endif -%}
-          {%- endfor -%}
-          {{ ns.jobs | tojson }}
-    - repeat:
-        for_each: "{{ jobs }}"
-        sequence:
-          - action: mqtt.publish
-            data:
-              topic: "{{ repeat.item.t }}"
-              payload: "{{ repeat.item.p }}"
-              qos: 1
-              retain: true
+  - variables:
+      jobs: "{%- set BAD = ['unknown', 'unavailable', 'none', 'None', ''] -%}\n{%-
+        set METRICS = [('battery', 'battery_percentage'),\n                   ('battery_voltage',
+        'battery_voltage'),\n                   ('status', 'node_status')] -%}\n{%-
+        set RADIO = [('frequency_mhz', 'frequency'),\n                 ('spreading_factor',
+        'spreading_factor'),\n                 ('bandwidth_khz', 'bandwidth'),\n                 ('tx_power_dbm',
+        'tx_power')] -%}\n{%- set ns = namespace(ids=[], jobs=[]) -%}\n{%- for s in
+        states.sensor -%}\n  {%- set m = s.entity_id | regex_findall('^sensor\\.meshcore_([0-9a-f]{6})_battery_voltage')
+        -%}\n  {%- if m and m[0] not in ns.ids -%}{%- set ns.ids = ns.ids + [m[0]]
+        -%}{%- endif -%}\n{%- endfor -%}\n{%- for node in ns.ids -%}\n  {%- set n
+        = namespace(fresh=none, meta={}, any=false, anchor=none) -%}\n  {%- for leaf,
+        src in METRICS -%}\n    {%- set cand = states.sensor | map(attribute='entity_id')\n
+        \                  | select('search', '^sensor\\.meshcore_' ~ node ~ '_' ~
+        src ~ '(_|$)') | list -%}\n    {%- if cand and states(cand[0]) not in BAD
+        -%}\n      {%- set ns.jobs = ns.jobs + [{'t': 'meshcore/' ~ node ~ '/' ~ leaf,
+        'p': states(cand[0])}] -%}\n      {%- set lu = states[cand[0]].last_updated
+        -%}\n      {%- if n.fresh is none or lu > n.fresh -%}{%- set n.fresh = lu
+        -%}{%- endif -%}\n      {%- set n.any = true -%}\n      {%- set n.anchor =
+        cand[0] -%}\n    {%- endif -%}\n  {%- endfor -%}\n  {%- if n.any -%}\n    {%-
+        for key, src in RADIO -%}\n      {%- set cand = states.sensor | map(attribute='entity_id')\n
+        \                    | select('search', '^sensor\\.meshcore_' ~ node ~ '_'
+        ~ src ~ '(_|$)') | list -%}\n      {%- if cand and states(cand[0]) not in
+        BAD -%}\n        {%- set n.meta = n.meta | combine({key: states(cand[0]) |
+        float(default=0)}) -%}\n      {%- endif -%}\n    {%- endfor -%}\n    {%- set
+        n.meta = n.meta | combine({\n          'node_id': node,\n          'name':
+        device_attr(n.anchor, 'name_by_user') or device_attr(n.anchor, 'name') or
+        node,\n          'source': 'meshcore-ha',\n          'transport': 'tcp'})
+        -%}\n    {%- set ns.jobs = ns.jobs + [{'t': 'meshcore/' ~ node ~ '/meta',
+        'p': n.meta | tojson}] -%}\n    {%- if n.fresh is not none -%}\n      {%-
+        set ns.jobs = ns.jobs + [{'t': 'meshcore/' ~ node ~ '/last_seen', 'p': n.fresh.isoformat()}]
+        -%}\n    {%- endif -%}\n  {%- endif -%}\n{%- endfor -%}\n{{ ns.jobs | tojson
+        }}"
+  - repeat:
+      for_each: '{{ jobs }}'
+      sequence:
+      - action: mqtt.publish
+        data:
+          topic: '{{ repeat.item.t }}'
+          payload: '{{ repeat.item.p }}'
+          qos: 1
+          retain: true
 - id: bath_presence_v1
-  alias: Ванная и прихожая по присутствию
-  description: 02:00–06:00 — фиолетовый 60 % над машинкой и в прихожей слева; 06:00–02:00
-    — вся ванная и прихожая тёплым 60 %. Минуту никого — всё выкл (датчик сам держит
-    присутствие ещё 60 с).
+  alias: Ванная по присутствию
+  description: 02:00–06:00 — фиолетовый 60 % над машинкой; 06:00–02:00 — ванная тёплым
+    60 % + полный свет. Минуту никого — выкл (датчик сам держит присутствие ещё 60 с).
   triggers:
   - trigger: state
     entity_id: binary_sensor.0xa4c138869ecdc59b_presence
@@ -167,10 +149,6 @@
           - light.svet_v_vannoi
           - light.vannaia_lampochka_nad_mashinkoi
           - light.lampochka_nad_tualetom
-          - light.prihozhaya
-          - light.prihozhaya_sleva_ot_vannoy
-          - light.prihozhaya_sprava_ot_vannoy
-          - light.svet_v_koridore
     - conditions:
       - condition: time
         after: 02:00:00
@@ -180,7 +158,6 @@
         target:
           entity_id:
           - light.vannaia_lampochka_nad_mashinkoi
-          - light.prihozhaya_sleva_ot_vannoy
         data:
           rgb_color:
           - 163
@@ -193,13 +170,65 @@
         entity_id:
         - light.vannaia_lampochka_nad_mashinkoi
         - light.lampochka_nad_tualetom
-        - light.prihozhaya_sleva_ot_vannoy
-        - light.prihozhaya_sprava_ot_vannoy
-        - light.svet_v_koridore
       data:
         color_temp_kelvin: 2700
         brightness_pct: 60
     - action: light.turn_on
       target:
         entity_id: light.svet_v_vannoi
+  mode: restart
+
+- id: hall_presence_v1
+  alias: Прихожая и коридор по движению
+  description: 02:00–06:00 — фиолетовый 60 %; 06:00–02:00 — тёплый 2700K 60 %. Минуту
+    нет движения — выкл.
+  triggers:
+  - trigger: state
+    entity_id: binary_sensor.0xa4c138e91ed0ad14_occupancy
+    to: 'on'
+    id: occupied
+  - trigger: state
+    entity_id: binary_sensor.0xa4c138e91ed0ad14_occupancy
+    to: 'off'
+    for: 00:01:00
+    id: empty
+  conditions: []
+  actions:
+  - choose:
+    - conditions:
+      - condition: trigger
+        id: empty
+      sequence:
+      - action: light.turn_off
+        target:
+          entity_id:
+          - light.prihozhaya
+          - light.prihozhaya_sleva_ot_vannoy
+          - light.prihozhaya_sprava_ot_vannoy
+          - light.svet_v_koridore
+    - conditions:
+      - condition: time
+        after: 02:00:00
+        before: 06:00:00
+      sequence:
+      - action: light.turn_on
+        target:
+          entity_id:
+          - light.prihozhaya
+          - light.svet_v_koridore
+        data:
+          rgb_color:
+          - 163
+          - 15
+          - 224
+          brightness_pct: 60
+    default:
+    - action: light.turn_on
+      target:
+        entity_id:
+        - light.prihozhaya
+        - light.svet_v_koridore
+      data:
+        color_temp_kelvin: 2700
+        brightness_pct: 60
   mode: restart

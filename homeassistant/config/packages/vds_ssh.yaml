@@ -1,0 +1,36 @@
+# Replacement for Uptime Kuma VDS TCP/22 check. Alert stays inside HA.
+command_line:
+  - binary_sensor:
+      name: VDS SSH available
+      unique_id: vds_ssh_available
+      command: !secret vds_ssh_check_cmd
+      payload_on: "ON"
+      payload_off: "OFF"
+      scan_interval: 60
+      device_class: connectivity
+
+automation:
+  - id: vds_ssh_offline_alert
+    alias: "VDS: SSH недоступен"
+    triggers:
+      - trigger: state
+        entity_id: binary_sensor.vds_ssh_dostupen
+        to: "off"
+        for: "00:03:00"
+    actions:
+      - action: persistent_notification.create
+        data:
+          notification_id: vds_ssh_offline
+          title: "VDS: SSH недоступен"
+          message: "Порт SSH на VDS не отвечает более трёх минут."
+  - id: vds_ssh_recovered
+    alias: "VDS: SSH восстановился"
+    triggers:
+      - trigger: state
+        entity_id: binary_sensor.vds_ssh_dostupen
+        from: "off"
+        to: "on"
+    actions:
+      - action: persistent_notification.dismiss
+        data:
+          notification_id: vds_ssh_offline
