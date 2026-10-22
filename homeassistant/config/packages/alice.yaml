@@ -9,3 +9,8 @@ yandex_smart_home:
     media_player.televizor:   # packages/tv.yaml
       name: Телевизор
       type: devices.types.media_device.tv
+    # Дополнительный свет в комнате (Tuya, RGBCCT 7002). Не тип light: «включи свет»
+    # берёт все light комнаты, а эта — только по имени, «включи маленькую лампочку».
+    light.malenkaia_lampochka:
+      name: Маленькая лампочка
+      type: devices.types.other
