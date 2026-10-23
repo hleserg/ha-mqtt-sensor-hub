@@ -39,12 +39,14 @@ template:
           {% if l and state_attr(l, 'color_mode') == 'xy' %}
             {{ state_attr(l, 'hs_color') | list }}
           {% else %}{{ none }}{% endif %}
+        # Вкл/выкл — z2m-группой: одна multicast-команда; поштучные то и дело
+        # теряются (timeout 10 с у 1, 3, 4), люстра горела частично.
         turn_on:
           - action: light.turn_on
-            target: { entity_id: "{{ lamps }}" }
+            target: { entity_id: light.piratskaia_liustra_gruppa }
         turn_off:
           - action: light.turn_off
-            target: { entity_id: "{{ lamps }}" }
+            target: { entity_id: light.piratskaia_liustra_gruppa }
         set_level:
           - action: script.piratskaya_lyustra_apply
             data: { data: { brightness: "{{ brightness }}" } }
