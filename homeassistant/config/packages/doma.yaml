@@ -38,21 +38,29 @@ automation:
       - action: script.ves_svet_vykl
 
   - id: doma_kto_to_est
-    alias: "Дома кто-то есть — свет в прихожей, если там движение"
+    alias: "Дома кто-то есть — свет там, где датчик уже видит человека"
     mode: single
     triggers:
       - trigger: state
         entity_id: input_boolean.doma_pusto
         from: "on"
         to: "off"
-    conditions:
-      - condition: state
-        entity_id: binary_sensor.0xa4c138e91ed0ad14_occupancy
-        state: "on"
     actions:
-      # Движение уже идёт — нового «on» от датчика не будет, зажигаем сами
-      - action: automation.trigger
-        target: { entity_id: automation.prikhozhaia_i_koridor_po_dvizheniiu }
+      # Датчик уже в «on» — нового «on» от него не будет, зажигаем сами
+      - if:
+          - condition: state
+            entity_id: binary_sensor.0xa4c138e91ed0ad14_occupancy
+            state: "on"
+        then:
+          - action: automation.trigger
+            target: { entity_id: automation.prikhozhaia_i_koridor_po_dvizheniiu }
+      - if:
+          - condition: state
+            entity_id: binary_sensor.0xa4c138869ecdc59b_presence
+            state: "on"
+        then:
+          - action: automation.trigger
+            target: { entity_id: automation.vannaia_i_prikhozhaia_po_prisutstviiu }
 
   - id: doma_pusto_telefon_doma
     alias: "Телефон в домашней Wi-Fi — дома кто-то есть"
