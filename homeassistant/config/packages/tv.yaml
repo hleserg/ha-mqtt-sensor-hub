@@ -170,6 +170,13 @@ automation:
         {{ ((trigger.to_state.attributes.volume_level
              - trigger.from_state.attributes.volume_level) * 10) | round | int }}
     actions:
+      # На любой ответ Алисы Мини на 1–3 с проседает до 0.5 и сама возвращается
+      # (запись 26.10) — это не «тише». Настоящее «громче/тише» держится.
+      - delay: 5
+      - condition: template
+        value_template: >-
+          {{ state_attr(trigger.entity_id, 'volume_level')
+             == trigger.to_state.attributes.volume_level }}
       - action: media_player.volume_set
         target: { entity_id: "{{ trigger.entity_id }}" }
         data: { volume_level: "{{ trigger.from_state.attributes.volume_level }}" }
