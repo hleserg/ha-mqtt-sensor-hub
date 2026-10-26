@@ -8,7 +8,7 @@
 #   уже 15 минут: пока уходишь, телефон ещё ловит сеть у подъезда.
 #
 # Пока пусто, свет по датчикам не включается: в автоматизациях по датчикам
-# (automations.yaml: bath_presence_v1, hall_presence_v1; komnata.yaml) включение — только при
+# (automations.yaml: bath_presence_v1, hall_presence_v1; komnata.yaml, kuhnya.yaml) включение — только при
 # doma_pusto = off, выключение — всегда. Новым датчикам — то же условие.
 
 input_boolean:
@@ -69,6 +69,14 @@ automation:
           - action: automation.trigger
             target: { entity_id: automation.komnata_po_prisutstviiu }
             data: { skip_condition: false }  # ночью — не зажигать
+      - if:
+          - condition: state
+            entity_id: binary_sensor.0xa4c138d08ca6bc12_presence
+            state: "on"
+        then:
+          - action: automation.trigger
+            target: { entity_id: automation.kukhnia_po_prisutstviiu }
+            data: { skip_condition: false }  # светло — не зажигать
 
   - id: doma_pusto_telefon_doma
     alias: "Телефон в домашней Wi-Fi — дома кто-то есть"

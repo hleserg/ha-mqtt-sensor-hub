@@ -1,0 +1,45 @@
+# Кухня — люстра по присутствию (датчик HOBEIAN ZG-204ZX 0xa4c138d08ca6bc12).
+#
+# Человек появился (темнее 250 лк, не «Дома пусто») → люстра. Стемнело, пока
+# человек на кухне, — тоже люстра. Лк — с того же датчика.
+# Никого минуту → люстра гаснет. Лампочки над стеной — только по запросу,
+# автомат их не трогает.
+
+automation:
+  - id: kuhnya_po_prisutstviyu
+    alias: "Кухня по присутствию"
+    mode: restart
+    triggers:
+      - trigger: state
+        entity_id: binary_sensor.0xa4c138d08ca6bc12_presence
+        to: "on"
+        id: occupied
+      - trigger: numeric_state
+        entity_id: sensor.0xa4c138d08ca6bc12_illuminance
+        below: 250
+        for: { minutes: 2 }
+        id: occupied
+      - trigger: state
+        entity_id: binary_sensor.0xa4c138d08ca6bc12_presence
+        to: "off"
+        for: { minutes: 1 }
+        id: empty
+    conditions:
+      - condition: or
+        conditions:
+          - condition: trigger
+            id: empty
+          - condition: and
+            conditions:
+              - condition: state
+                entity_id: input_boolean.doma_pusto
+                state: "off"
+              - condition: state
+                entity_id: binary_sensor.0xa4c138d08ca6bc12_presence
+                state: "on"
+              - condition: numeric_state
+                entity_id: sensor.0xa4c138d08ca6bc12_illuminance
+                below: 250
+    actions:
+      - action: "light.turn_{{ 'off' if trigger.id == 'empty' else 'on' }}"
+        target: { entity_id: light.kuhnya_lyustra_1 }
