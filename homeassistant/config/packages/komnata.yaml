@@ -1,6 +1,7 @@
 # Комната — свет по присутствию (датчик HOBEIAN ZG-204ZX 0xa4c138850d54de9f).
 #
-# Человек появился (06:00–24:00, не «Дома пусто», не «вручную») → люстра.
+# Человек появился (06:00–24:00, темнее 100 лк, не «Дома пусто», не «вручную») → люстра.
+# Стемнело, пока человек в комнате, — тоже люстра. Лк — с того же датчика.
 # Ночью не зажигаем: ночью свет в комнате — через лисёнка (fox.yaml).
 # Никого минуту → люстра и торшер гаснут, «вручную» сбрасывается.
 #
@@ -23,6 +24,12 @@ automation:
         entity_id: binary_sensor.0xa4c138850d54de9f_presence
         to: "on"
         id: occupied
+      # 100 лк — на глаз, днём в комнате 130–1200; подправить по вечерним замерам
+      - trigger: numeric_state
+        entity_id: sensor.0xa4c138850d54de9f_illuminance
+        below: 100
+        for: { minutes: 2 }
+        id: occupied
       - trigger: state
         entity_id: binary_sensor.0xa4c138850d54de9f_presence
         to: "off"
@@ -43,6 +50,12 @@ automation:
                 state: "off"
               - condition: time
                 after: "06:00:00"
+              - condition: state
+                entity_id: binary_sensor.0xa4c138850d54de9f_presence
+                state: "on"
+              - condition: numeric_state
+                entity_id: sensor.0xa4c138850d54de9f_illuminance
+                below: 100
     actions:
       - if:
           - condition: trigger
