@@ -1,0 +1,77 @@
+# Комната — свет по присутствию (датчик HOBEIAN ZG-204ZX 0xa4c138850d54de9f).
+#
+# Человек появился (06:00–24:00, не «Дома пусто», не «вручную») → люстра.
+# Ночью не зажигаем: ночью свет в комнате — через лисёнка (fox.yaml).
+# Никого минуту → люстра и торшер гаснут, «вручную» сбрасывается.
+#
+# «Вручную»: свет комнаты поменяли не этой автоматизацией (из HA, Алисой,
+# лисёнком, светомузыкой) — автомат не трогает свет, пока присутствие длится.
+# Свои изменения отличаем по времени: z2m присылает состояние новым context,
+# по context «кто менял» не понять.
+
+input_boolean:
+  komnata_svet_vruchnuyu:
+    name: Комната — свет вручную
+    icon: mdi:hand-back-right-outline
+
+automation:
+  - id: komnata_po_prisutstviyu
+    alias: "Комната по присутствию"
+    mode: restart
+    triggers:
+      - trigger: state
+        entity_id: binary_sensor.0xa4c138850d54de9f_presence
+        to: "on"
+        id: occupied
+      - trigger: state
+        entity_id: binary_sensor.0xa4c138850d54de9f_presence
+        to: "off"
+        for: { minutes: 1 }
+        id: empty
+    conditions:
+      - condition: or
+        conditions:
+          - condition: trigger
+            id: empty
+          - condition: and
+            conditions:
+              - condition: state
+                entity_id: input_boolean.doma_pusto
+                state: "off"
+              - condition: state
+                entity_id: input_boolean.komnata_svet_vruchnuyu
+                state: "off"
+              - condition: time
+                after: "06:00:00"
+    actions:
+      - if:
+          - condition: trigger
+            id: empty
+        then:
+          - action: light.turn_off
+            target: { entity_id: [light.piratskaya_lyustra, light.torsher] }
+          - action: input_boolean.turn_off
+            target: { entity_id: input_boolean.komnata_svet_vruchnuyu }
+        else:
+          - action: light.turn_on
+            target: { entity_id: light.piratskaya_lyustra }
+
+  - id: komnata_svet_vruchnuyu
+    alias: "Комната — свет поменяли руками, автомат ждёт ухода"
+    mode: single
+    triggers:
+      # без to/from — ловит и яркость/цвет
+      - trigger: state
+        entity_id: [light.piratskaya_lyustra, light.torsher]
+    conditions:
+      - condition: state
+        entity_id: binary_sensor.0xa4c138850d54de9f_presence
+        state: "on"
+      - "{{ trigger.from_state.state not in ['unavailable', 'unknown']
+            and trigger.to_state.state not in ['unavailable', 'unknown'] }}"
+      # не своё: автомат присутствия не срабатывал последние 15 с
+      - "{{ now() - (state_attr('automation.komnata_po_prisutstviiu', 'last_triggered')
+            or as_datetime('1970-01-01T00:00:00+00:00')) > timedelta(seconds=15) }}"
+    actions:
+      - action: input_boolean.turn_on
+        target: { entity_id: input_boolean.komnata_svet_vruchnuyu }
