@@ -1,9 +1,17 @@
 # Кухня — люстра по присутствию (датчик HOBEIAN ZG-204ZX 0xa4c138d08ca6bc12).
 #
-# Человек появился (темнее 250 лк, не «Дома пусто») → люстра. Стемнело, пока
-# человек на кухне, — тоже люстра. Лк — с того же датчика.
-# Никого минуту → люстра гаснет. Лампочки над стеной — только по запросу,
-# автомат их не трогает.
+# Человек появился (темнее 250 лк, не «Дома пусто», не «вручную») → люстра.
+# Стемнело, пока человек на кухне, — тоже люстра. Лк — с того же датчика.
+# Никого минуту → люстра гаснет, «вручную» сбрасывается. Лампочки над стеной —
+# только по запросу, автомат их не зажигает и не гасит.
+#
+# «Вручную»: свет кухни поменяли не этой автоматизацией — автомат не трогает
+# свет, пока присутствие длится. Как в komnata.yaml: своё отличаем по времени.
+
+input_boolean:
+  kuhnya_svet_vruchnuyu:
+    name: Кухня — свет вручную
+    icon: mdi:hand-back-right-outline
 
 automation:
   - id: kuhnya_po_prisutstviyu
@@ -35,11 +43,43 @@ automation:
                 entity_id: input_boolean.doma_pusto
                 state: "off"
               - condition: state
+                entity_id: input_boolean.kuhnya_svet_vruchnuyu
+                state: "off"
+              - condition: state
                 entity_id: binary_sensor.0xa4c138d08ca6bc12_presence
                 state: "on"
               - condition: numeric_state
                 entity_id: sensor.0xa4c138d08ca6bc12_illuminance
                 below: 250
     actions:
-      - action: "light.turn_{{ 'off' if trigger.id == 'empty' else 'on' }}"
-        target: { entity_id: light.kuhnya_lyustra_1 }
+      - if:
+          - condition: trigger
+            id: empty
+        then:
+          - action: light.turn_off
+            target: { entity_id: light.kuhnya_lyustra_1 }
+          - action: input_boolean.turn_off
+            target: { entity_id: input_boolean.kuhnya_svet_vruchnuyu }
+        else:
+          - action: light.turn_on
+            target: { entity_id: light.kuhnya_lyustra_1 }
+
+  - id: kuhnya_svet_vruchnuyu
+    alias: "Кухня — свет поменяли руками, автомат ждёт ухода"
+    mode: single
+    triggers:
+      # без to/from — ловит и яркость/цвет
+      - trigger: state
+        entity_id: [light.kuhnya_lyustra_1, light.kukhnia_lampochki_nad_stenoi]
+    conditions:
+      - condition: state
+        entity_id: binary_sensor.0xa4c138d08ca6bc12_presence
+        state: "on"
+      - "{{ trigger.from_state.state not in ['unavailable', 'unknown']
+            and trigger.to_state.state not in ['unavailable', 'unknown'] }}"
+      # не своё: автомат присутствия не срабатывал последние 15 с
+      - "{{ now() - (state_attr('automation.kukhnia_po_prisutstviiu', 'last_triggered')
+            or as_datetime('1970-01-01T00:00:00+00:00')) > timedelta(seconds=15) }}"
+    actions:
+      - action: input_boolean.turn_on
+        target: { entity_id: input_boolean.kuhnya_svet_vruchnuyu }
