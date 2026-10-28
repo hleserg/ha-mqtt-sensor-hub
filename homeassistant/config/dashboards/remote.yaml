@@ -21,14 +21,15 @@ views:
         columns: 3
         square: false
         cards:
-          - &key
-            type: button
+          # В якорях только общее: перекрытый ключ из << HA пишет в лог как дубль
+          - <<: &key { type: button }
             name: Назад
             icon: mdi:arrow-left-circle
-            tap_action: &send
-              action: perform-action
-              perform_action: remote.send_command
-              target: { entity_id: remote.tv_pristavka_mi_tv_stick }
+            tap_action:
+              <<: &send
+                action: perform-action
+                perform_action: remote.send_command
+                target: { entity_id: remote.tv_pristavka_mi_tv_stick }
               data: { command: BACK }
           - <<: *key
             name: " "
@@ -124,14 +125,11 @@ views:
         columns: 3
         square: false
         cards:
-          - &pc
-            type: button
+          - <<: &pc { type: button, show_state: false }
             name: Назад
             icon: mdi:skip-previous
-            show_state: false
-            tap_action: &press
-              action: perform-action
-              perform_action: button.press
+            tap_action:
+              <<: &press { action: perform-action, perform_action: button.press }
               target: { entity_id: button.bigpc_agent_previous_2 }
           - <<: *pc
             name: Пауза

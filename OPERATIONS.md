@@ -152,7 +152,7 @@ refused.
 
 ## Frigate (runs on bigpc, not doctor)
 
-NVR and object detection for the iFEEL camera (192.168.1.141) live on bigpc
+NVR and object detection for the iFEEL camera (192.168.30.141) live on bigpc
 (192.168.1.10) for its GPU, inside WSL2 Ubuntu, in `/mnt/nvme/frigate`:
 `docker-compose.yml`, `.env` (camera, MQTT and Frigate `admin` passwords,
 mode 600), `config/config.yml`, `media/`. UI: <https://192.168.1.10:8971>
