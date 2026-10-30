@@ -68,6 +68,10 @@ def connect():
     # Static holds a colour.
     if dev.modes[dev.active_mode].name != "Static":
         dev.set_mode("Static")
+        # The read-back right after set_mode can still report the old mode; with
+        # fast=True set_color never re-reads, and for a RANDOM-colour mode it then
+        # silently sends nothing (30.10: 9 min of red instead of a show).
+        dev.active_mode = next(i for i, m in enumerate(dev.modes) if m.name == "Static")
     print(f"openrgb: {dev.name}, {len(dev.leds)} LED", flush=True)
     return cli, dev
 
