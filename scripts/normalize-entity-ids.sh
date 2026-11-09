@@ -97,6 +97,28 @@ async def main():
                 "outdoor_wind_gust": "m/s",
             }
 
+            # Zigbee devices discovered through zigbee2mqtt: ieee -> short slug.
+            # The `_light` entity takes the slug itself, the rest become
+            # <domain>.<slug>_<rest>. Renaming the device in z2m does not change
+            # the entity id (it is bound to unique_id), hence this map.
+            Z2M = {
+                "0xe8ca50e1949a0000": "malenkaia_lampochka",   # eWeLink bulb in the floor lamp
+            }
+            # What Alice may call the light (registry aliases; yandex_smart_home
+            # takes only `^[а-яё0-9 ]+$`, so no dots or hyphens here).
+            ALIASES = {
+                "light.malenkaia_lampochka": [
+                    "Маленький свет", "Боковой свет", "Доп свет", "Дополнительный свет",
+                    "Маленькая лампа", "Лампочка в торшере", "Маленькая лампочка в торшере",
+                ],
+            }
+            # Entities we evict so a Z2M slug can take the id (old Tuya cloud
+            # twin of the same bulb). Renamed and disabled, never deleted — the
+            # Tuya integration refuses to remove a device the cloud still has.
+            EVICT = {
+                "light.malenkaia_lampochka": ("tuya", "light.malenkaia_lampochka_tuya_staroe"),
+            }
+
             listing = await call({"type": "config/entity_registry/list"})
             entities = listing.get("result", [])
 
@@ -104,11 +126,43 @@ async def main():
             renamed = skipped = retuned = 0
 
             for e in entities:
-                uid = e.get("unique_id") or ""
-                if e.get("platform") != "mqtt" or not uid.startswith(OWNED):
+                want_plat, new_id = EVICT.get(e["entity_id"], (None, None))
+                if want_plat is None or e.get("platform") != want_plat:
                     continue
-                domain = e["entity_id"].split(".", 1)[0]
-                want = f"{domain}.{uid}"
+                res = await call({
+                    "type": "config/entity_registry/update",
+                    "entity_id": e["entity_id"],
+                    "new_entity_id": new_id,
+                    "disabled_by": "user",
+                })
+                if res.get("success"):
+                    print(f"  EVICT {e['entity_id']}  ->  {new_id} (disabled)")
+                    taken.discard(e["entity_id"]); taken.add(new_id)
+                    e["entity_id"] = new_id
+                    renamed += 1
+                else:
+                    print(f"  FAILED evict {e['entity_id']}: {res.get('error')}")
+                    skipped += 1
+
+            def z2m_want(e):
+                uid = e.get("unique_id") or ""
+                if e.get("platform") != "mqtt" or not uid.endswith("_zigbee2mqtt"):
+                    return None
+                for ieee, slug in Z2M.items():
+                    if uid.startswith(ieee + "_"):
+                        rest = uid[len(ieee) + 1:-len("_zigbee2mqtt")]
+                        domain = e["entity_id"].split(".", 1)[0]
+                        return f"{domain}.{slug}" if rest == "light" else f"{domain}.{slug}_{rest}"
+                return None
+
+            for e in entities:
+                uid = e.get("unique_id") or ""
+                want = z2m_want(e)
+                if want is None:
+                    if e.get("platform") != "mqtt" or not uid.startswith(OWNED):
+                        continue
+                    domain = e["entity_id"].split(".", 1)[0]
+                    want = f"{domain}.{uid}"
                 if e["entity_id"] == want:
                     continue
                 if want in taken:
@@ -149,7 +203,23 @@ async def main():
                 else:
                     print(f"  FAILED unit on {e['entity_id']}: {res.get('error')}")
 
-            print(f"\n  renamed {renamed}, units set {retuned}, skipped {skipped}")
+            # Third pass: Alice aliases on the ids that now exist.
+            for e in (await call({"type": "config/entity_registry/list"})).get("result", []):
+                want_al = ALIASES.get(e["entity_id"])
+                if want_al is None or set(e.get("aliases") or []) == set(want_al):
+                    continue
+                res = await call({
+                    "type": "config/entity_registry/update",
+                    "entity_id": e["entity_id"],
+                    "aliases": want_al,
+                })
+                if res.get("success"):
+                    print(f"  {e['entity_id']}  aliases -> {', '.join(want_al)}")
+                    retuned += 1
+                else:
+                    print(f"  FAILED aliases on {e['entity_id']}: {res.get('error')}")
+
+            print(f"\n  renamed {renamed}, units/aliases set {retuned}, skipped {skipped}")
 
 asyncio.run(main())
 PYEOF

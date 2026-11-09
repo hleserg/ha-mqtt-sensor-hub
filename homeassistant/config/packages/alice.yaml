@@ -9,8 +9,11 @@ yandex_smart_home:
     media_player.televizor:   # packages/tv.yaml
       name: Телевизор
       type: devices.types.media_device.tv
-    # Дополнительный свет в комнате (Tuya, RGBCCT 7002). Не тип light: «включи свет»
-    # берёт все light комнаты, а эта — только по имени, «включи маленькую лампочку».
+    # Боковой свет в торшере (z2m «Маленькая лампочка», eWeLink CK-BL702-AL-01).
+    # Тип light: «весь свет» в комнате её берёт, «торшер» — нет (другое устройство).
+    # Синонимы («маленький свет», «боковой свет»…) — псевдонимы объекта в реестре
+    # HA, их ставит scripts/normalize-entity-ids.sh (опция entry_aliases включена).
     light.malenkaia_lampochka:
       name: Маленькая лампочка
-      type: devices.types.other
+      room: Комната
+      type: devices.types.light

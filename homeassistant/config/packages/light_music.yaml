@@ -109,10 +109,14 @@ automation:
           extra: >-
             {{ [] if kitchen or states('light.podsvetka_kompa') in ['unavailable', 'unknown']
                else ['light.podsvetka_kompa'] }}
+          # Side bulb in the floor lamp (z2m «Маленькая лампочка»): room only.
+          side: >-
+            {{ [] if kitchen or states('light.malenkaia_lampochka') in ['unavailable', 'unknown']
+               else ['light.malenkaia_lampochka'] }}
       - action: scene.create
         data:
           scene_id: light_music_before
-          snapshot_entities: "{{ lamps + extra }}"
+          snapshot_entities: "{{ lamps + extra + side }}"
       # Alice pauses the music while she listens: give it 5 s to resume.
       - wait_template: "{{ is_state(station, 'playing') }}"
         timeout: 5
@@ -193,6 +197,7 @@ automation:
                   style: "{{ style }}"
                   period: "{{ beat | round(3) }}"
                   pc: "{{ extra | count > 0 }}"
+                  side: "{{ side | default([]) }}"
             - action: logbook.log
               data:
                 name: Светомузыка
@@ -265,6 +270,8 @@ script:
         description: Секунд между командами
       pc:
         description: Слать такты подсветке компа (tools/pc_rgb_fader.py)
+      side:
+        description: Боковая лампочка торшера (список, пустой — не участвует)
     sequence:
       - variables:
           hues: >-
@@ -337,6 +344,19 @@ script:
                       {{ 70 if style == 'calm' else 100 }}
                       {{ [100, ((75 if style == 'calm' else 100) * dim * 1.4) | round(0) | int] | min }}
                       {{ period }}
+            # Side bulb in the floor lamp: its own colour every other beat, on the
+            # chandelier's dim beats so it fills in rather than doubles the flash.
+            - if: "{{ (side | default([])) | count > 0 and i % 2 == 0 }}"
+              then:
+                - action: light.turn_on
+                  target: { entity_id: "{{ side }}" }
+                  data:
+                    hs_color: >-
+                      {{ [hues[(i // 2 * 5 + 4) % hues | count], 70 if style == 'calm' else 100] }}
+                    brightness_pct: >-
+                      {% set base = 35 if style == 'calm' else 60 if style == 'mid' else 80 %}
+                      {{ [3, [100, (base * dim) | round(0) | int] | min] | max }}
+                    transition: "{{ (period / 2) | round(2) if style != 'energy' else 0 }}"
             # To the beat's own time from the start, not «period after the last
             # command»: command time no longer adds up and drifts off the song.
             - delay:
