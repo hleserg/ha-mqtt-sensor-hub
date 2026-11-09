@@ -34,7 +34,20 @@
   «Обновить список устройств». ESPHome `switch.vykliuchatel_1/2_rele` не трогал.
 - Утром ~09:10 пропадало питание, doctor поднят по WoL. Алиса мини после
   переключения питания села на SSID beta-home, IP `192.168.1.109` — в HA не перепроверял.
-- Раскат: см. ниже «Раскатано» (дописать после деплоя).
+- **Раскатано 09:58** (59e05d6 + a48ed52): check_config чисто, HA перезапущен,
+  нормализатор: 3 EVICT, 3 WRAP + переименование, имена на реле. Проверено через
+  HA API: `light.svet_v_vannoi`/`light.prihozhaya` on→реле on→off→реле off;
+  `bath_fan_v1` загружен (`automation.vytiazhka_v_vannoi_po_vlazhnosti`).
+  **Вытяжка 2 мин в пустой ванной — presence остался off**, помех нет.
+- **Грабли:** HA не мог управлять реле — ACL mosquitto для `homeassistant`
+  разрешал `zigbee2mqtt/+/set`, а z2m для двухклавишных шлёт команды в
+  `zigbee2mqtt/<имя>/l2/set`. Добавлено `topic write zigbee2mqtt/+/+/set`
+  (acl.conf). `docker kill -s HUP` не перечитал конфиг («Unable to open config
+  file») — нужен `docker restart iot-mosquitto`, HA и z2m переподключаются за 10 с.
+- Мелочи: триггер `dry` у вытяжки срабатывает через 2 мин после старта HA
+  (шлёт turn_off, безвредно). Старый config entry switch_as_x
+  `01M30SEMM2JVVSQTPZG3EF8S43` (ESP-реле) ещё загружен, сущность disabled —
+  можно удалить в UI Интеграции → Switch as X.
 
 
 ## 2026-11-09: новая зигби-лампочка в торшере → «Маленькая лампочка» (бюджет bet-6af123c0-b450)
