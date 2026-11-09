@@ -45,7 +45,8 @@ automation:
       - "{{ now().hour < 6 and is_state('light.lisenok_nochnik', 'on') }}"
     variables:
       # Прихожую сюда не добавлять: её ведёт свой датчик движения (hall_presence_v1).
-      path: [light.torsher, light.vannaia_lampochka_nad_mashinkoi]
+      # Ванная теперь на обычных лампах через выключатель — в фиолетовый путь не входит.
+      path: [light.torsher]
     actions:
       - action: light.turn_on
         target: { entity_id: "{{ path }}" }

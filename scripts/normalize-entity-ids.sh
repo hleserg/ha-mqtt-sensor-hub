@@ -119,7 +119,26 @@ async def main():
             # Tuya integration refuses to remove a device the cloud still has.
             EVICT = {
                 "light.malenkaia_lampochka": ("tuya", "light.malenkaia_lampochka_tuya_staroe"),
+                # 2026-11-09: прихожая/коридор/ванная на обычных лампах через
+                # BSEED TS0726. Старые z2m-лампы и ESP-реле ванной освобождают ids
+                # для switch_as_x-обёрток из WRAP. Устройства удалять в z2m UI.
+                "light.prihozhaya": ("mqtt", "light.prihozhaya_z2m_gruppa_staroe"),
+                "light.svet_v_koridore": ("mqtt", "light.svet_v_koridore_ewelink_staroe"),
+                "light.svet_v_vannoi": ("switch_as_x", "light.svet_v_vannoi_esp_staroe"),
             }
+            # Реле выключателей → light через switch_as_x, чтобы hall_button,
+            # «Весь свет выкл» (states.light) и фильтр Алисы не менялись.
+            # Источник → (домен, нужный entity_id, имя). Имя ставится на реле,
+            # switch_as_x копирует его на обёртку (copy_custom_name).
+            WRAP = {
+                "switch.prikhozhaia_vykliuchatel_l1": ("light", "light.prihozhaya", "Прихожая"),
+                "switch.prikhozhaia_vykliuchatel_l2": ("light", "light.svet_v_koridore", "Свет в коридоре"),
+                "switch.vannaia_vykliuchatel_l2": ("light", "light.svet_v_vannoi", "Свет в ванной"),
+            }
+            NAMES = {
+                "switch.vannaia_vykliuchatel_l1": "Вытяжка в ванной",
+            }
+            NAMES.update({src: name for src, (_, _, name) in WRAP.items()})
 
             listing = await call({"type": "config/entity_registry/list"})
             entities = listing.get("result", [])
@@ -183,6 +202,72 @@ async def main():
                 else:
                     print(f"  FAILED {e['entity_id']}: {res.get('error')}")
                     skipped += 1
+
+            # Names on the relays (and anything else in NAMES).
+            for eid, name in NAMES.items():
+                cur = next((x for x in entities if x["entity_id"] == eid), None)
+                if cur is None:
+                    print(f"  SKIP name: {eid} not in registry"); skipped += 1; continue
+                if cur.get("name") == name:
+                    continue
+                res = await call({"type": "config/entity_registry/update",
+                                  "entity_id": eid, "name": name})
+                print(f"  {eid}  name -> {name}" if res.get("success")
+                      else f"  FAILED name on {eid}: {res.get('error')}")
+                retuned += res.get("success", False)
+
+            # switch_as_x wrappers. A wrapper is recognised by platform + the
+            # source relay's device and original_name (its unique_id is the
+            # random config entry id). Missing → create through the config
+            # flow REST API, then rename to the id we want.
+            headers = {"Authorization": f"Bearer {token}"}
+            entities = (await call({"type": "config/entity_registry/list"})).get("result", [])
+            taken = {e["entity_id"] for e in entities}
+            for src, (dom, want, name) in WRAP.items():
+                s_ent = next((x for x in entities if x["entity_id"] == src), None)
+                if s_ent is None:
+                    print(f"  SKIP wrap: {src} not in registry"); skipped += 1; continue
+                def is_wrap(x):
+                    return (x.get("platform") == "switch_as_x"
+                            and x["entity_id"].startswith(dom + ".")
+                            and x.get("device_id") == s_ent.get("device_id")
+                            and x.get("original_name") == s_ent.get("original_name"))
+                w = next((x for x in entities if is_wrap(x)), None)
+                if w is None:
+                    async with session.post("http://127.0.0.1:8123/api/config/config_entries/flow",
+                                            json={"handler": "switch_as_x"}, headers=headers) as r:
+                        flow = await r.json()
+                    async with session.post(f"http://127.0.0.1:8123/api/config/config_entries/flow/{flow['flow_id']}",
+                                            json={"entity_id": src, "target_domain": dom}, headers=headers) as r:
+                        res = await r.json()
+                    if res.get("type") != "create_entry":
+                        print(f"  FAILED wrap {src}: {res}"); skipped += 1; continue
+                    entry_id = res["result"]["entry_id"]
+                    for _ in range(20):
+                        await asyncio.sleep(0.5)
+                        entities = (await call({"type": "config/entity_registry/list"})).get("result", [])
+                        w = next((x for x in entities if x.get("config_entry_id") == entry_id), None)
+                        if w: break
+                    if w is None:
+                        print(f"  FAILED wrap {src}: entity did not appear"); skipped += 1; continue
+                    print(f"  WRAP {src} -> {w['entity_id']} (switch_as_x {dom})")
+                if w["entity_id"] != want:
+                    if want in taken:
+                        print(f"  SKIP {w['entity_id']} -> {want} (already taken)"); skipped += 1
+                    else:
+                        res = await call({"type": "config/entity_registry/update",
+                                          "entity_id": w["entity_id"], "new_entity_id": want})
+                        if res.get("success"):
+                            print(f"  {w['entity_id']}  ->  {want}")
+                            taken.discard(w["entity_id"]); taken.add(want); renamed += 1
+                            w["entity_id"] = want
+                        else:
+                            print(f"  FAILED {w['entity_id']}: {res.get('error')}"); skipped += 1
+                if w.get("name") != name:
+                    res = await call({"type": "config/entity_registry/update",
+                                      "entity_id": w["entity_id"], "name": name})
+                    print(f"  {w['entity_id']}  name -> {name}" if res.get("success")
+                          else f"  FAILED name on {w['entity_id']}: {res.get('error')}")
 
             # Second pass: display units, after the ids have settled.
             for e in (await call({"type": "config/entity_registry/list"})).get("result", []):

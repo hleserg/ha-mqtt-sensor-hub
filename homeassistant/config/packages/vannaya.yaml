@@ -1,0 +1,61 @@
+# Ванная: вытяжка (клавиша L1 «Ванная выключатель», BSEED TS0726) по влажности.
+# Свет ванной — клавиша L2 → light.svet_v_vannoi (switch_as_x), автоматизация
+# bath_presence_v1 в automations.yaml. Вытяжка шумная, поэтому только без людей:
+# никого 2 мин и влажность ≥ порога — вкл; зашёл кто-то или влажность
+# ≤ порог−10 две минуты — выкл. Датчик ZG-204ZX отдаёт влажность раз в 1–2 мин;
+# за 7 дней фон 23–60 %, после душа 66–80 % — отсюда порог 65.
+input_number:
+  vytiazhka_porog:
+    name: "Вытяжка: порог влажности"
+    min: 50
+    max: 90
+    step: 1
+    initial: 65
+    unit_of_measurement: "%"
+    icon: mdi:water-percent
+
+automation:
+  - id: bath_fan_v1
+    alias: "Вытяжка в ванной по влажности"
+    mode: queued
+    triggers:
+      - trigger: state
+        entity_id: binary_sensor.0xa4c138869ecdc59b_presence
+        to: "off"
+        for: "00:02:00"
+        id: empty
+      - trigger: numeric_state
+        entity_id: sensor.0xa4c138869ecdc59b_humidity
+        above: input_number.vytiazhka_porog
+        id: humid
+      - trigger: state
+        entity_id: binary_sensor.0xa4c138869ecdc59b_presence
+        to: "on"
+        id: occupied
+      - trigger: template
+        value_template: >
+          {{ states('sensor.0xa4c138869ecdc59b_humidity') | float(100)
+             <= states('input_number.vytiazhka_porog') | float(65) - 10 }}
+        for: "00:02:00"
+        id: dry
+    actions:
+      - choose:
+          - conditions:
+              - condition: trigger
+                id: [empty, humid]
+              - condition: state
+                entity_id: binary_sensor.0xa4c138869ecdc59b_presence
+                state: "off"
+                for: "00:02:00"
+              - condition: numeric_state
+                entity_id: sensor.0xa4c138869ecdc59b_humidity
+                above: input_number.vytiazhka_porog
+            sequence:
+              - action: switch.turn_on
+                target: { entity_id: switch.vannaia_vykliuchatel_l1 }
+          - conditions:
+              - condition: trigger
+                id: [occupied, dry]
+            sequence:
+              - action: switch.turn_off
+                target: { entity_id: switch.vannaia_vykliuchatel_l1 }

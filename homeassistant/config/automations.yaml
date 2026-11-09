@@ -124,8 +124,8 @@
           retain: true
 - id: bath_presence_v1
   alias: Ванная по присутствию
-  description: 02:00–06:00 — фиолетовый 60 % над машинкой; 06:00–02:00 — ванная тёплым
-    60 % + полный свет. Минуту никого — выкл (датчик сам держит присутствие ещё 60 с).
+  description: Присутствие — свет в ванной (клавиша L2 «Ванная выключатель»); минуту никого
+    — выкл (датчик сам держит присутствие ещё 60 с). Вытяжка — packages/vannaya.yaml.
   triggers:
   - trigger: state
     entity_id: binary_sensor.0xa4c138869ecdc59b_presence
@@ -146,50 +146,15 @@
       entity_id: input_boolean.doma_pusto
       state: 'off'
   actions:
-  - choose:
-    - conditions:
-      - condition: trigger
-        id: empty
-      sequence:
-      - action: light.turn_off
-        target:
-          entity_id:
-          - light.svet_v_vannoi
-          - light.vannaia_lampochka_nad_mashinkoi
-          - light.lampochka_nad_tualetom
-    - conditions:
-      - condition: time
-        after: 02:00:00
-        before: 06:00:00
-      sequence:
-      - action: light.turn_on
-        target:
-          entity_id:
-          - light.vannaia_lampochka_nad_mashinkoi
-        data:
-          rgb_color:
-          - 163
-          - 15
-          - 224
-          brightness_pct: 60
-    default:
-    - action: light.turn_on
-      target:
-        entity_id:
-        - light.vannaia_lampochka_nad_mashinkoi
-        - light.lampochka_nad_tualetom
-      data:
-        color_temp_kelvin: 2700
-        brightness_pct: 60
-    - action: light.turn_on
-      target:
-        entity_id: light.svet_v_vannoi
+  - action: "light.turn_{{ 'off' if trigger.id == 'empty' else 'on' }}"
+    target:
+      entity_id: light.svet_v_vannoi
   mode: restart
 
 - id: hall_presence_v1
   alias: Прихожая и коридор по движению
-  description: 02:00–06:00 — фиолетовый 60 %; 06:00–02:00 — тёплый 2700K 60 %. Минуту
-    нет движения — выкл.
+  description: Движение — свет в прихожей и коридоре (клавиши L1/L2 «Прихожая выключатель»,
+    обычные лампы, без цвета); минуту нет движения — выкл.
   triggers:
   - trigger: state
     entity_id: binary_sensor.0xa4c138e91ed0ad14_occupancy
@@ -202,49 +167,9 @@
     id: empty
   conditions: *not_away
   actions:
-  - choose:
-    - conditions:
-      - condition: trigger
-        id: empty
-      sequence:
-      - action: light.turn_off
-        target:
-          entity_id:
-          - light.prihozhaya
-          - light.prihozhaya_sleva_ot_vannoy
-          - light.prihozhaya_sprava_ot_vannoy
-          - light.svet_v_koridore
-    - conditions:
-      - condition: time
-        after: 02:00:00
-        before: 06:00:00
-      sequence:
-      # «Свет в коридоре» (eWeLink CK-BL702) из выключенного не включается
-      # командой с яркостью: сначала голое on, потом цвет.
-      - action: light.turn_on
-        target:
-          entity_id: light.svet_v_koridore
-      - action: light.turn_on
-        target:
-          entity_id:
-          - light.prihozhaya
-          - light.svet_v_koridore
-        data:
-          rgb_color:
-          - 163
-          - 15
-          - 224
-          brightness_pct: 60
-    default:
-    - action: light.turn_on
-      target:
-        entity_id: light.svet_v_koridore
-    - action: light.turn_on
-      target:
-        entity_id:
-        - light.prihozhaya
-        - light.svet_v_koridore
-      data:
-        color_temp_kelvin: 2700
-        brightness_pct: 60
+  - action: "light.turn_{{ 'off' if trigger.id == 'empty' else 'on' }}"
+    target:
+      entity_id:
+      - light.prihozhaya
+      - light.svet_v_koridore
   mode: restart

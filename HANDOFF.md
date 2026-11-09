@@ -1,5 +1,42 @@
 # HANDOFF
 
+## 2026-11-09: выключатели BSEED в ванной/прихожей, лампы обычные, ночной свет снесён
+
+- **Железо (владелец сам перебрал):** все лампы в прихожей/коридоре/ванной
+  теперь обычные. Два BSEED TS0726 (2 клавиши) спарены в z2m, клик-тест ок:
+  «Ванная выключатель» `0xa4c13896e37bbe1f` (L1 = вытяжка, L2 = свет →
+  `switch.vannaia_vykliuchatel_l1/_l2`), «Прихожая выключатель»
+  `0xa4c138991df2064c` (L1 = прихожая 2 лампы, L2 = коридор →
+  `switch.prikhozhaia_vykliuchatel_l1/_l2`). permit_join закрыт.
+  `power_on_behavior` обоих = off (владелец не ответил, не трогал).
+- **Модель сущностей:** реле → `light` через switch_as_x, ids старых ламп
+  сохраняются (`light.prihozhaya`, `light.svet_v_koridore`, `light.svet_v_vannoi`),
+  поэтому hall_button, «Весь свет выкл» и фильтр Алисы не правятся. Вытяжка —
+  просто `switch.vannaia_vykliuchatel_l1`. Делает `scripts/normalize-entity-ids.sh`:
+  EVICT старых (z2m-группа 1, eWeLink `0xe8ca50e1f09e0000`, switch_as_x над
+  ESP-реле `switch.svet_v_vannoi`) → `*_staroe` disabled; WRAP — создать
+  switch_as_x через REST config flow (`handler: switch_as_x`, `entity_id`,
+  `target_domain`), переименовать, имя на реле (switch_as_x копирует).
+- **Автоматизации:** `bath_presence_v1` / `hall_presence_v1` — только
+  on/off по присутствию (`light.turn_{{ 'off' if trigger.id=='empty' else 'on' }}`),
+  ночной фиолет 02–06, яркость, eWeLink-костыль, sleva/sprava — удалены.
+  `fox.yaml` путь лисы = только `light.torsher`. Новый `packages/vannaya.yaml`:
+  `bath_fan_v1` — вытяжка ВКЛ когда присутствия нет ≥2 мин и влажность
+  `sensor.0xa4c138869ecdc59b_humidity` ≥ `input_number.vytiazhka_porog` (65,
+  по 7 дням: фон 23–60, душ 66–80); ВЫКЛ при присутствии или влажность ≤ порог−10
+  2 мин. **Риск:** mmWave может видеть работающий вентилятор как присутствие —
+  проверить после раската (включить вытяжку в пустой ванной, смотреть presence 2 мин).
+- **Классификатор запретил** z2m `bridge/request/device/remove` и `group/remove` —
+  не повторять. Владельцу удалить в z2m UI 5 мёртвых ламп (`0xa4c13893d3650657`,
+  `0xa4c13889d6f6d24f`, `0xe8ca50e1f09e0000`, `0xa4c13865a8fd9f37`,
+  `0xa4c138c689a69c23`) и группу «Прихожая»; из фильтра Алисы убрать
+  `light.lampochka_nad_tualetom`, `light.vannaia_lampochka_nad_mashinkoi` и
+  «Обновить список устройств». ESPHome `switch.vykliuchatel_1/2_rele` не трогал.
+- Утром ~09:10 пропадало питание, doctor поднят по WoL. Алиса мини после
+  переключения питания села на SSID beta-home, IP `192.168.1.109` — в HA не перепроверял.
+- Раскат: см. ниже «Раскатано» (дописать после деплоя).
+
+
 ## 2026-11-09: новая зигби-лампочка в торшере → «Маленькая лампочка» (бюджет bet-6af123c0-b450)
 
 - **Спарено:** eWeLink CK-BL702-AL-01, ieee `0xe8ca50e1949a0000`, в z2m переименована
