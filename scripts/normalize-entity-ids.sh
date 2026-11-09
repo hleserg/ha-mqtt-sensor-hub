@@ -203,21 +203,26 @@ async def main():
                 else:
                     print(f"  FAILED unit on {e['entity_id']}: {res.get('error')}")
 
-            # Third pass: Alice aliases on the ids that now exist.
-            for e in (await call({"type": "config/entity_registry/list"})).get("result", []):
-                want_al = ALIASES.get(e["entity_id"])
-                if want_al is None or set(e.get("aliases") or []) == set(want_al):
+            # Third pass: Alice aliases on the ids that now exist. `list` omits
+            # aliases, only `get` returns them — so read back through `get`.
+            for eid, want_al in ALIASES.items():
+                got = await call({"type": "config/entity_registry/get", "entity_id": eid})
+                if not got.get("success"):
+                    print(f"  SKIP aliases: {eid} not in registry")
+                    continue
+                if set(got["result"].get("aliases") or []) == set(want_al):
                     continue
                 res = await call({
                     "type": "config/entity_registry/update",
-                    "entity_id": e["entity_id"],
+                    "entity_id": eid,
                     "aliases": want_al,
                 })
-                if res.get("success"):
-                    print(f"  {e['entity_id']}  aliases -> {', '.join(want_al)}")
+                now = (res.get("result") or {}).get("entity_entry", {}).get("aliases")
+                if res.get("success") and set(now or []) == set(want_al):
+                    print(f"  {eid}  aliases -> {', '.join(want_al)}")
                     retuned += 1
                 else:
-                    print(f"  FAILED aliases on {e['entity_id']}: {res.get('error')}")
+                    print(f"  FAILED aliases on {eid}: {res.get('error') or now}")
 
             print(f"\n  renamed {renamed}, units/aliases set {retuned}, skipped {skipped}")
 
