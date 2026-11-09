@@ -104,8 +104,10 @@ async def main():
             Z2M = {
                 "0xe8ca50e1949a0000": "malenkaia_lampochka",   # eWeLink bulb in the floor lamp
             }
-            # What Alice may call the light (registry aliases; yandex_smart_home
-            # takes only `^[а-яё0-9 ]+$`, so no dots or hyphens here).
+            # Registry aliases (HA Assist). Not Alice synonyms: yandex_smart_home
+            # only uses the alphabetically first one as the *name*, and
+            # entity_config `name` wins over that. Alice synonyms live in the
+            # Yandex app, per device.
             ALIASES = {
                 "light.malenkaia_lampochka": [
                     "Маленький свет", "Боковой свет", "Доп свет", "Дополнительный свет",
