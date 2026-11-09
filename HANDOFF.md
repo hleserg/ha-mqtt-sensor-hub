@@ -20,8 +20,15 @@
 - **Светомузыка** (`light_music.yaml`): переменная `side`, снапшот/восстановление,
   такт по чётным битам своим цветом, `lamps` остаются 4.
 - Хвост: на проде untracked `zz_alice_probe.yaml` (временный пробник) — не трогал.
-- Дальше: push → pull doctor → check_config → normalize → restart HA → владельцу
-  удалить старую лампу в Smart Life и обновить устройства в Яндексе.
+- **Раскатано 05:00** (e7adc84 + фикс нормализатора): check_config чисто, HA
+  перезапущен, нормализатор: EVICT старой Tuya → `light.malenkaia_lampochka_tuya_staroe`
+  (disabled), новая взяла `light.malenkaia_lampochka`, псевдонимы стоят (в
+  `.storage` они лежат в `aliases_v2`, а `config/entity_registry/list` их не отдаёт —
+  читать через `get`). Остальные сущности лампы: `select.malenkaia_lampochka_*`,
+  `switch.malenkaia_lampochka_switch_do_not_disturb`, `sensor.malenkaia_lampochka_linkquality`.
+- Владельцу: удалить старую лампу в Smart Life (когда угодно) и в приложении
+  Яндекс удалить «Маленькая лампочка» + «Обновить список устройств» (тип сменился).
+  Светомузыку с лампочкой ещё не гоняли — проверить на первом же шоу.
 
 ## 2026-10-30: подсветка компа не участвовала в светомузыке — починено (0753c0c)
 
