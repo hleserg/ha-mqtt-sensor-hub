@@ -154,7 +154,8 @@
 - id: hall_presence_v1
   alias: Прихожая и коридор по движению
   description: Движение — свет в прихожей и коридоре (клавиши L1/L2 «Прихожая выключатель»,
-    обычные лампы, без цвета); минуту нет движения — выкл.
+    обычные лампы, без цвета); минуту нет движения — выкл. Гасит только то, что
+    включила сама (флаг prihozhaya_avto) — включённое клавишей не трогает.
   triggers:
   - trigger: state
     entity_id: binary_sensor.0xa4c138e91ed0ad14_occupancy
@@ -167,9 +168,27 @@
     id: empty
   conditions: *not_away
   actions:
-  - action: "light.turn_{{ 'off' if trigger.id == 'empty' else 'on' }}"
-    target:
-      entity_id:
-      - light.prihozhaya
-      - light.svet_v_koridore
+  - choose:
+    - conditions:
+      - condition: trigger
+        id: occupied
+      - condition: state
+        entity_id: [light.prihozhaya, light.svet_v_koridore]
+        state: 'off'
+      sequence:
+      - action: input_boolean.turn_on
+        target: { entity_id: input_boolean.prihozhaya_avto }
+      - action: light.turn_on
+        target: { entity_id: [light.prihozhaya, light.svet_v_koridore] }
+    - conditions:
+      - condition: trigger
+        id: empty
+      - condition: state
+        entity_id: input_boolean.prihozhaya_avto
+        state: 'on'
+      sequence:
+      - action: light.turn_off
+        target: { entity_id: [light.prihozhaya, light.svet_v_koridore] }
+      - action: input_boolean.turn_off
+        target: { entity_id: input_boolean.prihozhaya_avto }
   mode: restart

@@ -1,3 +1,10 @@
+# Флаг для hall_presence_v1 (automations.yaml): свет в прихожей/коридоре
+# включила автоматизация, а не клавиша. Только такой свет она и гасит.
+input_boolean:
+  prihozhaya_avto:
+    name: "Прихожая: свет включён по движению"
+    icon: mdi:motion-sensor
+
 # Zigbee-кнопка Lincukoo CZB01 (0xa4c13846f2241e0e), прихожая.
 # z2m шлёт в .../action строку: короткое = toggle, двойное = on, долгое = off.
 # Топик по friendly_name — переименуешь устройство в z2m, поправь и здесь.
