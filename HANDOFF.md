@@ -1,5 +1,26 @@
 # HANDOFF
 
+## 2026-11-13: Frigate снаружи через KeenDNS (бюджет bet-6af632f6-4452)
+
+- **Сделано:** `https://frig.hleserg.crazedns.ru` → bigpc `60:45:2e:d7:81:01`
+  (192.168.1.10) порт 8971 (https, с логином Frigate; 5000 без логина наружу не
+  отдаётся и в LAN закрыт). На роутере Netcraze Ultra: `ip http proxy frig` /
+  `upstream https … 8971` / `domain ndns` / `ssl redirect` /
+  `security-level public`, `system configuration save`. Имя `frig` — как на Giga.
+- **Проверено:** снаружи (WebFetch) отдаётся страница «Frigate»; с Pi через это
+  имя сертификат LE валиден, `/api/login` 200, `/api/version` 0.18.0, `/ws` → 101.
+  Первые ~15 с после создания прокси отвечал 000 — потом поднялся сам.
+- **Как ходить на роутер:** `KN_ENV=~/.config/netcraze.env KN_OUT=файл python3
+  ~/router-migration/kn-batch.py пачка.txt` (юзер agent, конфиг пишет). `kn.sh`
+  на Ultra молчит, однострочник `ip http proxy frig upstream …` даёт «argument
+  parse error» — только вход в режим, команды по строке, `exit`. Пачка:
+  `~/router-migration/batch-ultra-frig.txt`, конфиг до правки:
+  `~/router-migration/backup/ultra-before-frig-1113-0048.txt`.
+- **Откат:** `no ip http proxy frig` + `system configuration save`.
+- **Открыто (спросил владельца):** во Frigate не задан
+  `auth.failed_login_rate_limit`, `trusted_proxies` пуст — логин теперь торчит в
+  интернет без лимита попыток.
+
 ## 2026-11-09: выключатели BSEED в ванной/прихожей, лампы обычные, ночной свет снесён
 
 - **Железо (владелец сам перебрал):** все лампы в прихожей/коридоре/ванной
