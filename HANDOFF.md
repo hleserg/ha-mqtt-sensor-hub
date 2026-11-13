@@ -23,6 +23,9 @@
   это?» тоже молчат, пока не прописаны.
 - **Чтобы Мара здоровалась с кем-то из новых:** строка в `~/mara/watch/people.yaml`
   → `people:` и `systemctl --user restart mara-watch`.
+- **13.11 11:12 включено для `Аня`:** «Привет, Анют!» (сервис рестартован,
+  `should_greet` → True). В библиотеке у неё **один** кадр — при пороге 0.9 узнавание
+  ненадёжно; живьём не проверено.
 - **Грабли Immich 3.4.0:** `search/metadata` боксы лиц не отдаёт даже с
   `withPeople` — нужен `GET /api/faces?id=<asset>`; бокс в координатах превью
   (`imageWidth/Height` = размер `thumbnail?size=preview`). `people/{id}/statistics`
