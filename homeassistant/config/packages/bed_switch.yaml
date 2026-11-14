@@ -1,0 +1,77 @@
+# Zigbee-выключатель Aqara WXKG17LM (0x54ef44100133ff13), комната, у кровати.
+# z2m шлёт в .../action: single_left|right|both, double_left|right, hold_left|right
+# (click_mode = multi; двойного и долгого «обеими» у него нет).
+# Топик по friendly_name — переименуешь устройство в z2m, поправь и здесь.
+# Левую клавишу не держать ~10 с: это сброс устройства, оно уйдёт из сети.
+#
+# одиночное — половина пиратской люстры (левая клавиша — лампы 1 и 3, правая —
+#   2 и 4): горит хоть одна из пары → гасим обе, иначе включаем;
+# двойное  — левая: торшер, правая: маленькая лампочка;
+# долгое   — яркость всех горящих ламп комнаты: левая 20 %, правая 100 %;
+# обе сразу — отбой: весь свет выкл, но там, где датчик сейчас кого-то видит
+#   (кухня, ванная, прихожая), свет остаётся; комната гаснет всегда. Гаснут
+#   монитор и подсветка компа, зажигается ночник лисёнка.
+automation:
+  - id: bed_switch
+    alias: "Выключатель у кровати"
+    mode: queued
+    triggers:
+      - trigger: mqtt
+        topic: zigbee2mqtt/Выключатель у кровати/action
+    variables:
+      # ponytail: лампы люстры поштучно — команды изредка теряются (см.
+      # pirate_chandelier.yaml); будет мешать — завести z2m-группы на половины.
+      halves:
+        left: [light.piratskaya_lyustra_1, light.piratskaya_lyustra_3]
+        right: [light.piratskaya_lyustra_2, light.piratskaya_lyustra_4]
+      room: [light.piratskaya_lyustra_1, light.piratskaya_lyustra_2, light.piratskaya_lyustra_3,
+             light.piratskaya_lyustra_4, light.torsher, light.malenkaia_lampochka]
+      # датчик → свет, который он бережёт от «отбоя». Списком, а не по зонам HA:
+      # у света прихожей, коридора и ванной зона не задана.
+      guarded:
+        binary_sensor.0xa4c138d08ca6bc12_presence: [light.kuhnya_lyustra_1, light.kukhnia_lampochki_nad_stenoi]
+        binary_sensor.0xa4c138869ecdc59b_presence: [light.svet_v_vannoi]
+        binary_sensor.0xa4c138e91ed0ad14_occupancy: [light.prihozhaya, light.svet_v_koridore]
+      key: "{{ trigger.payload.split('_') | last }}"
+    actions:
+      - choose:
+          - conditions: "{{ trigger.payload in ['single_left', 'single_right'] }}"
+            sequence:
+              - variables:
+                  half: "{{ halves[key] }}"
+              - action: "light.turn_{{ 'off' if half | select('is_state', 'on') | list else 'on' }}"
+                target: { entity_id: "{{ half }}" }
+          - conditions: "{{ trigger.payload in ['double_left', 'double_right'] }}"
+            sequence:
+              - action: light.toggle
+                target: { entity_id: "light.{{ 'torsher' if key == 'left' else 'malenkaia_lampochka' }}" }
+          - conditions: "{{ trigger.payload in ['hold_left', 'hold_right'] }}"
+            sequence:
+              - variables:
+                  lit: "{{ room | select('is_state', 'on') | list }}"
+              - if: "{{ lit | count > 0 }}"
+                then:
+                  - action: light.turn_on
+                    target: { entity_id: "{{ lit }}" }
+                    data: { brightness_pct: "{{ 20 if key == 'left' else 100 }}" }
+          - conditions: "{{ trigger.payload == 'single_both' }}"
+            sequence:
+              - action: script.ves_svet_vykl
+                data:
+                  # лисёнка не гасим, чтобы не моргнул: ниже он всё равно включается
+                  keep: >
+                    {%- set ns = namespace(keep=['light.lisenok_nochnik']) -%}
+                    {%- for sensor, lights in guarded.items() if is_state(sensor, 'on') -%}
+                      {%- set ns.keep = ns.keep + lights -%}
+                    {%- endfor -%}
+                    {{ ns.keep }}
+              - action: button.press
+                target: { entity_id: button.bigpc_agent_monitor_off_2 }
+                continue_on_error: true
+              # Отдельно от «весь свет выкл»: состояние в HA бывает off при горящей
+              # подсветке. Известный сбой: гаснет не всегда (OpenRGB).
+              - action: light.turn_off
+                target: { entity_id: light.podsvetka_kompa }
+                continue_on_error: true
+              - action: light.turn_on       # лисёнок не в сети — HA пропустит сам
+                target: { entity_id: light.lisenok_nochnik }

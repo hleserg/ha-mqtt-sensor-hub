@@ -44,6 +44,9 @@ script:
   ves_svet_vykl:
     alias: "Весь свет выкл"
     mode: single
+    fields:
+      keep:
+        description: "Лампы, которые не гасить (список entity_id). Без него гаснет всё."
     sequence:
       # Оборвать фиолетовый путь лисёнка и светомузыку, иначе они включат свет обратно
       - action: automation.turn_off
@@ -62,7 +65,8 @@ script:
       - variables:
           lit: >
             {{ states.light | selectattr('state', 'eq', 'on') | map(attribute='entity_id')
-               | reject('eq', 'light.smart_feeder_indicator_light') | list }}
+               | reject('eq', 'light.smart_feeder_indicator_light')
+               | reject('in', keep | default([])) | list }}
       - if: "{{ lit | count > 0 }}"
         then:
           - action: light.turn_off
