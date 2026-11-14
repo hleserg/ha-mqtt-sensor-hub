@@ -1,6 +1,21 @@
 # HANDOFF
 
-## 2026-11-14: Мара вместо Алисы — рычаги HA и самообучающийся навык (бюджет bet-6af7d04b-4452) — разведка закончена, задан первый вопрос, реализации НЕТ
+## 2026-11-14: Мара вместо Алисы — рычаги HA и самообучающийся навык (бюджет bet-6af7d04b-4452) — спек одобрен, СЛЕДУЮЩИЙ ШАГ — написать план; реализации НЕТ
+
+> **Новой сессии — с чего начать (шаг 5 из 6):**
+> 1. `python3 ~/.claude/hooks/task-budget.py resume bet-6af7d04b-4452`, вывод показать.
+> 2. Прочитать спек `docs/superpowers/specs/2026-11-14-mara-home-control-design.md`.
+> 3. Дособрать 8 фактов из списка «Не выяснено для плана» ниже (только чтение).
+> 4. Вызвать `superpowers:writing-plans`, написать
+>    `docs/superpowers/plans/2026-11-14-mara-home-control.md`, самопроверка,
+>    коммит + push, отправить владельцу (`SendUserFile`, render).
+> 5. Спросить владельца: план верен? способ исполнения? (моя рекомендация —
+>    Native / `superpowers:executing-plans`: задач мало, все на живом проде,
+>    зависят друг от друга и от участия владельца).
+>
+> **Запрет до ответа на п. 5:** ничего не менять на проде — учётку HA не
+> заводить, `.env` и `SOUL.md` на маке не править, навык не писать, crontab не
+> трогать, шлюз не рестартовать. Одобрение спека разрешает только план.
 
 - **Запрос владельца (утро 14.11):** «нужно чтобы мара и гермес потихоньку
   заменяли алису. Нужно дать ей рычаги по управлению устройствами и навык
@@ -93,10 +108,91 @@
   учётка — через WebSocket API HA, флаг «только локальная сеть».
   `HANDOFF.md` остаётся в корне, хотя появился `docs/` (хук ищет
   `docs/HANDOFF.md`, потом корень — по наличию файла).
-- **Дальше:** ревью спека владельцем → `writing-plans` (и только он) →
-  реализация по плану. По завершении:
-  `task-budget.py end`, обновить память `light-control-via-mara` (устарела:
-  говорить и слышать Мара уже умеет).
+- **14.11: спек одобрен владельцем («go»).** Вызван `superpowers:writing-plans`,
+  собрана часть фактов, **план не начат** — владелец попросил хендофф и `/clear`.
+  На проде (HA, мак, Hermes) ничего не менялось. Мониторов, кронов, фоновых
+  агентов нет. Бюджет открыт.
+- **Факты для плана (собраны 14.11, только чтение):**
+  - CLI Hermes на маке: `~/.hermes/hermes-agent/venv/bin/hermes` (в PATH нет;
+    рядом `hermes-acp`, `hermes-agent`).
+  - launchd: `ai.hermes.gateway` и `ai.hermes.watchdog`; plist
+    `~/Library/LaunchAgents/ai.hermes.gateway.plist`, запуск через
+    `venv/bin/python -m hermes_cli.stderr_timestamp --error-log
+    ~/.hermes/logs/gateway.error.log -- …`.
+  - `homeassistant_tool.py`: `HASS_URL`/`HASS_TOKEN` читаются через
+    `get_secret(…)` (стр. 35–36), доступность рычагов — стр. 346–347
+    (`bool(get_secret("HASS_TOKEN"))`), блок-лист доменов — стр. 54, проверка —
+    267. `get_secret` — `agent/secret_scope.py:149`; загрузчик env —
+    `hermes_cli/env_loader.py` (148, 161).
+  - `skill_manager_tool.py`: `_patch_skill(…, file_path=None, …)` — стр. 1103,
+    по умолчанию правит `SKILL.md`; `ALLOWED_SUBDIRS = {references, templates,
+    scripts, assets}` (554); `delete` требует `absorbed_into`.
+    `config.yaml`: `skills.creation_nudge_interval: 0`.
+  - `SOUL.md` строки 42–46 (точный текст для патча; файл целиком не открывать):
+    ```
+    - Пришло с меткой «[маска…]» — он говорил вслух. Отвечаю обычным текстом,
+      сразу, без инструментов: ухо маски само озвучит мой итоговый ответ. Не зову
+      say.py, не грею, не читаю скилы speech-direction/pronunciation — они для
+      оракула и для правки произношения по отзыву. Текст в телеграме при этом
+      **остаётся**. Оба сразу, всегда.
+    ```
+    Строка 47 начинается «- Текст тут не вежливость, а страховка…». Фраза-
+    исключение из спека дописывается после «Оба сразу, всегда.».
+  - Метка mask-ear (`~/.hermes/plugins/mask-ear/__init__.py:102`):
+    `"[маска, %s; сейчас %s по Москве, date не нужен; отве…"` (хвост не дочитан);
+    первая подстановка — «вижу boss» / «вижу guest-N» / «никого не вижу».
+  - `~/mask/heard` — **каталог** (211 записей, имена вида
+    `shots-23.09-014427.txt`). Содержимое — речь из комнаты: не читать и не
+    цитировать, смотреть только имена и mtime.
+  - `~/.hermes/backups/` уже существует. crontab мака — одна строка (04:30).
+  - Образцы для навыка: frontmatter `pronunciation/SKILL.md` (`name`,
+    `description`, `version: 1.0.0`, `author: Сергей (hleserg)`, `license: MIT`,
+    `platforms: [macos, linux]`, `metadata:`), его раздел «## Когда хозяин
+    поправил произношение» (стр. 98) и «## Чего в словарь не класть»;
+    `speech-direction/references/lessons.md` — «# Журнал уроков озвучки»,
+    правило «Записывать только наблюдаемое…».
+  - На Pi в системном python3 нет `aiohttp`, `websockets`, `websocket` —
+    WebSocket-скрипт создания пользователя HA с Pi «как есть» не запустить.
+  - Scratchpad прошлой сессии пуст (скрипты выгрузки утрачены) — писать заново,
+    нужное надолго держать в `~/.cache`, не в `/tmp`.
+  - Управляемые сущности для засева словаря (24): `light.piratskaya_lyustra`,
+    `…_1..4`, `torsher`, `podsvetka_kompa`, `lisenok_nochnik` (Комната);
+    `light.kuhnya_lyustra_1`, `kukhnia_lampochki_nad_stenoi` (Кухня);
+    `light.prihozhaya`, `svet_v_koridore`, `svet_v_vannoi`,
+    `malenkaia_lampochka` (без зоны); `switch.odna_lampochka_piratskoi_liustry`,
+    `switch.polovina_piratskoi_liustry`; `media_player.televizor`;
+    `remote.tv_pristavka_mi_tv_stick`;
+    `button.living_room_ir_blaster_tv_power|ht_power|cupboard_open|vanya_box`;
+    `button.komnata_lisenok_khvatit_radovatsia`; `input_boolean.svetomuzyka`.
+    Плюс скрипты `script.ves_svet_vykl`, `tv_on`, `tv_off`, `tv_volume`.
+- **Не выяснено для плана (сделать первым делом, только чтение):**
+  1. Точные `friendly_name`, зоны и состояния 24 сущностей; поля
+     `script.tv_volume`/`tv_on`/`tv_off`/`ves_svet_vykl` (`GET /api/services`,
+     `POST /api/template`; env — `~/.config/ha.env`, парсить построчно, токен
+     не печатать).
+  2. Где запускать WebSocket-скрипт создания пользователя: внутри контейнера HA
+     (`ssh doctor docker exec -i iot-homeassistant python3 -`, проверить
+     aiohttp) или в venv Hermes на маке. Команды HA: `config/auth/create`
+     (`group_ids: ["system-users"]`, `local_only: true`) →
+     `config/auth_provider/homeassistant/create` → `/auth/login_flow` →
+     `/auth/token` → `auth/long_lived_access_token` (`client_name: "hermes"`).
+  3. Подхватит ли шлюз новый `.env` без рестарта (`secret_scope.py:149`,
+     `env_loader.py`).
+  4. Флаги `hermes chat -Q` для тихой проверки рычагов и навыка — без голоса и
+     без рестарта шлюза.
+  5. Полный текст метки mask-ear (строка 102).
+  6. В каком журнале `~/.hermes/logs/` виден `NO_REPLY`.
+  7. Что уже лежит в `~/.hermes/backups/`.
+  8. Как из имени/mtime файла в `~/mask/heard` получить время фразы для замера
+     задержки (проверка 4 спека).
+- **Формат плана (по `writing-plans`):** шапка (`# … Implementation Plan`,
+  строка «For agentic workers: REQUIRED SUB-SKILL…», Goal, Architecture, Tech
+  Stack, Spec, `## Global Constraints`, `## Review Focus`), задачи `### Task N`
+  с Files / Interfaces / шагами-чекбоксами с точными командами и ожидаемым
+  выводом, без плейсхолдеров; порядок задач — «Порядок работ» спека.
+- **По завершении задачи:** `task-budget.py end` (итог показать), обновить
+  память `light-control-via-mara` (устарела: говорить и слышать Мара уже умеет),
+  недоделки — в `todo.vsiakii_umnyi_dom`.
 
 ## 2026-11-14: Frigate — щелчок пальцами должен ловиться почти всегда (бюджет bet-6af78a84-4452) — гейт + шум + эхо применены 14.11 02:24, на записях одиночные 0.91 против 0.52, живая проверка не проведена, припарковано по слову владельца
 
