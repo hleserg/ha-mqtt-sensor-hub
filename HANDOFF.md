@@ -17,7 +17,13 @@
 >   только локальная сеть), токен `hermes` лежит в `~/.cache/mara-ha/hass_token`
 >   на Pi до Task 3. Проверка 1 спека: `/api/` 200, `/api/states/light.torsher`
 >   200, `/api/error_log` 401. Откат — `~/.cache/mara-ha/run_in_ha.sh delete`.
-> - Task 2–7: не начаты.
+> - Task 2 готов (13:49): навык `~/.hermes/skills/mara/home-control/` на маке,
+>   `hermes skills list` показывает `enabled`; 28 строк словаря, все `entity_id`
+>   живые (14 off, 9 on, 5 кнопок). md5: `SKILL.md` = `4a6f7424210e15e07860be0b4aff3203`,
+>   `lessons.md` = `ec5798a2ace44267000ad2d3dc31abb7`. Эталон —
+>   `~/.cache/mara-ha/home-control/` на Pi. Откат —
+>   `ssh mac-mini 'mv ~/.hermes/skills/mara/home-control ~/.hermes/backups/home-control-removed-20261114'`.
+> - Task 3–7: не начаты.
 
 - **Запрос владельца (утро 14.11):** «нужно чтобы мара и гермес потихоньку
   заменяли алису. Нужно дать ей рычаги по управлению устройствами и навык
