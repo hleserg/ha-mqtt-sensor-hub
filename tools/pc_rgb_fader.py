@@ -62,16 +62,21 @@ def on_message(client, userdata, msg):
 
 def connect():
     from openrgb import OpenRGBClient
+    from openrgb.utils import ModeColors
     cli = OpenRGBClient(RGB_HOST, 6742, "pc-rgb-fader")
     dev = next(d for d in cli.devices if DEVICE in d.name)
-    # HA's effect "off" asks for Direct and this board falls back to Breathing;
-    # Static holds a colour.
-    if dev.modes[dev.active_mode].name != "Static":
-        dev.set_mode("Static")
-        # The read-back right after set_mode can still report the old mode; with
-        # fast=True set_color never re-reads, and for a RANDOM-colour mode it then
-        # silently sends nothing (30.10: 9 min of red instead of a show).
-        dev.active_mode = next(i for i, m in enumerate(dev.modes) if m.name == "Static")
+    # Static holds a colour. OpenRGB 1.0 silently rejects a mode whose fields differ
+    # from its own and keeps the old one: Direct from this client always, Static
+    # while the server reads it off the board as RANDOM-colour (after every server
+    # start). Naming PER_LED gets it accepted. See OPERATIONS.md, "bigpc fan RGB".
+    static = next(m for m in dev.modes if m.name == "Static")
+    static.color_mode = ModeColors.PER_LED
+    static.brightness = static.brightness_max
+    dev.set_mode(static)   # re-reads the device from the server
+    m = dev.modes[dev.active_mode]
+    if m.name != "Static" or m.color_mode != ModeColors.PER_LED:
+        # set_color would silently send nothing (30.10: 9 min of red instead of a show)
+        raise OSError(f"server kept {m.name!r} instead of Static")
     print(f"openrgb: {dev.name}, {len(dev.leds)} LED", flush=True)
     return cli, dev
 

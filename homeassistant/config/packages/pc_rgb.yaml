@@ -1,0 +1,68 @@
+# =============================================================================
+#  Подсветка компа (light.podsvetka_kompa) — костыль под OpenRGB 1.0 на bigpc
+# =============================================================================
+#  Сервер OpenRGB 1.0 молча отвергает режим, чьё описание от клиента не совпало
+#  с его собственным, и применяет старый. На плате MSI Z790 это ломает два места:
+#   1. После каждого старта сервера (ребут ПК, перезапуск задачи) режим Static
+#      читается с платы как «случайный цвет». HA показывает «включено» и не
+#      может ни погасить, ни сменить цвет. Чинит pc_rgb_norm.
+#   2. Выключает HA режимом Direct, а его сервер от openrgb-python не берёт.
+#      Из Static гаснет и так (хватает чёрного цвета), из эффектов со «случайным
+#      цветом» (Rainbow wave и т.п.) — нет. Догашивает pc_rgb_off.
+#  Что именно шлётся — tools/pc_rgb_fix.py; разбор и проверки — OPERATIONS.md,
+#  «bigpc fan RGB».
+#  ponytail: пакет и tools/pc_rgb_fix.py убрать, когда на bigpc будет OpenRGB с
+#  исправлением. В 1.1 его нет (проверено 15.11.2026).
+# =============================================================================
+
+shell_command:
+  pc_rgb_fix: "python3 /config/tools/pc_rgb_fix.py {{ action }}"
+
+automation:
+  - id: pc_rgb_norm
+    alias: Подсветка компа — починить режим после старта OpenRGB
+    mode: single
+    max_exceeded: silent
+    triggers:
+      # Сервер стартовал со Static «случайный цвет» — сущность становится on
+      # (и из off при быстром перезапуске, и из unavailable после ребута ПК).
+      - trigger: state
+        entity_id: light.podsvetka_kompa
+        to: "on"
+      - trigger: homeassistant
+        event: start
+    conditions:
+      - "{{ is_state('light.podsvetka_kompa', 'on') }}"
+    actions:
+      - action: shell_command.pc_rgb_fix
+        data: { action: norm }
+        response_variable: fix
+      # Список режимов «с цветом» интеграция считает один раз при создании
+      # сущности — после починки его надо пересчитать, иначе цвет не выставить.
+      - if: "{{ 'fixed' in fix.stdout | default('') }}"
+        then:
+          - action: homeassistant.reload_config_entry
+            target: { entity_id: light.podsvetka_kompa }
+
+  - id: pc_rgb_off
+    alias: Подсветка компа — догасить, если не погасла
+    mode: single
+    max_exceeded: silent
+    triggers:
+      # ponytail: ловит только light.turn_off с entity_id. Цели area/label/floor,
+      # entity_id: all и light.toggle сюда не попадут — в конфиге их для этой
+      # лампы нет, плитка шлёт явный turn_off. Появятся — добавить сюда.
+      - trigger: event
+        event_type: call_service
+        event_data: { domain: light, service: turn_off }
+    conditions:
+      - "{{ 'light.podsvetka_kompa' in trigger.event.data.service_data.entity_id | default([]) }}"
+    actions:
+      - delay: 2   # штатное выключение успевает отработать и перечитать состояние
+      - condition: state
+        entity_id: light.podsvetka_kompa
+        state: "on"
+      - action: shell_command.pc_rgb_fix
+        data: { action: "off" }
+      - action: homeassistant.update_entity
+        target: { entity_id: light.podsvetka_kompa }

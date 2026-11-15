@@ -69,7 +69,7 @@ automation:
                 target: { entity_id: button.bigpc_agent_monitor_off_2 }
                 continue_on_error: true
               # Отдельно от «весь свет выкл»: состояние в HA бывает off при горящей
-              # подсветке. Известный сбой: гаснет не всегда (OpenRGB).
+              # подсветке. Из эффектов OpenRGB сам не гасит — догашивает pc_rgb.yaml.
               - action: light.turn_off
                 target: { entity_id: light.podsvetka_kompa }
                 continue_on_error: true

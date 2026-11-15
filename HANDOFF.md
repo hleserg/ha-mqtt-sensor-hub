@@ -180,6 +180,25 @@
 >     `tools/pc_rgb_fader.py:connect()`. Проверки: T1 — «тёмная радуга» →
 >     `light.turn_off` из HA → должен стать `Static cm 1`, HA `off`; T2 —
 >     перезапуск сервера → за ~60 с сам становится `Static cm 1`, HA `off`.
+>   - **Шаг G выполнен 05:12:** задача `\MSI Task Host - LEDKeeper2_Host` →
+>     `Enabled = False` (процесс pid 6296 жив, ночью не убивал). Откат:
+>     `schtasks /Change /TN "MSI Task Host - LEDKeeper2_Host" /ENABLE`.
+>   - **RED до правок (05:13–05:21), всё без света:**
+>     - T2: перезапуск сервера 05:13:20 (pid 16628) → сервер `Static cm 3 br 8
+>       [(0,0,0)]` (яркость читается 8, хотя в шаге D сохранялась 10 — не
+>       объяснено), HA в 05:13:36 `off` → `on effect=off cm=onoff`, **без
+>       `unavailable`**; само не исправляется. Отсюда триггер нормализатора —
+>       `to: 'on'`, а не «из `unavailable`».
+>     - T1: 05:15:27 «тёмная радуга» (`~/.cache/mara-ha/rgb_t1.py`: Rainbow
+>       wave, яркость 0); `light.turn_off` из HA → сервер по-прежнему `Rainbow
+>       wave cm 3 br 0`, HA `on effect=rainbow_wave`.
+>     - Фейдер: установленный `connect()` при «тёмной радуге» → сервер остался
+>       в `Rainbow wave` (Static отвергнут).
+>     - В событии `call_service` цель лежит в `service_data.entity_id`
+>       (`core.py:2922`, `service_data.update(target)`).
+>   - **Состояние на 05:21:** плата в «тёмной радуге» (тёмная, HA `on`), ждёт
+>     GREEN T1. Если бросить здесь — вернуть Static трёхшагово:
+>     `~/.cache/mara-ha/rgb_exp3.py` (яркость 0 → чёрный), потом яркость 10.
 > - **Копия навыка на маке — проверено 04:52, пункт закрыт (todo = 29).** Cron
 >   мака отработал в 04:45:00 (`ctime` копии), `~/.hermes/backups/home-control-7`
 >   совпадает с навыком (`diff -r` пуст). Будильник `a13cc8a6` снят.
