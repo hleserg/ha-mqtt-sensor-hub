@@ -65,18 +65,23 @@ def connect():
     from openrgb.utils import ModeColors
     cli = OpenRGBClient(RGB_HOST, 6742, "pc-rgb-fader")
     dev = next(d for d in cli.devices if DEVICE in d.name)
-    # Static holds a colour. OpenRGB 1.0 silently rejects a mode whose fields differ
-    # from its own and keeps the old one: Direct from this client always, Static
-    # while the server reads it off the board as RANDOM-colour (after every server
-    # start). Naming PER_LED gets it accepted. See OPERATIONS.md, "bigpc fan RGB".
+    # Цвет держит Static. OpenRGB 1.0 молча отвергает режим, чьи поля не совпали с
+    # его собственными, и оставляет старый: Direct от этого клиента — всегда,
+    # Static — пока сервер читает его с платы как «случайный цвет» (после каждого
+    # своего старта). С явным PER_LED берёт. См. OPERATIONS.md, «bigpc fan RGB».
     static = next(m for m in dev.modes if m.name == "Static")
     static.color_mode = ModeColors.PER_LED
     static.brightness = static.brightness_max
-    dev.set_mode(static)   # re-reads the device from the server
-    m = dev.modes[dev.active_mode]
-    if m.name != "Static" or m.color_mode != ModeColors.PER_LED:
-        # set_color would silently send nothing (30.10: 9 min of red instead of a show)
-        raise OSError(f"server kept {m.name!r} instead of Static")
+    dev.set_mode(static)
+    for _ in range(15):   # сервер применяет режим в своём потоке: сразу отдаёт старый
+        m = dev.modes[dev.active_mode]
+        if m.name == "Static" and m.color_mode == ModeColors.PER_LED:
+            break
+        time.sleep(0.2)
+        dev.update()
+    else:
+        # иначе set_color молча ничего не шлёт (30.10: 9 минут красного вместо шоу)
+        raise OSError(f"сервер оставил {m.name!r} вместо Static")
     print(f"openrgb: {dev.name}, {len(dev.leds)} LED", flush=True)
     return cli, dev
 

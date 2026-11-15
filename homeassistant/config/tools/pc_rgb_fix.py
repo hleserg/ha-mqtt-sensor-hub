@@ -16,6 +16,7 @@
 Вызывает packages/pc_rgb.yaml. Проверка — вживую: OPERATIONS.md, там же.
 """
 import sys
+import time
 
 from openrgb import OpenRGBClient
 from openrgb.utils import ModeColors, RGBColor
@@ -27,10 +28,16 @@ def static(dev, brightness):
     m = next(m for m in dev.modes if m.name == "Static")
     m.color_mode = ModeColors.PER_LED
     m.brightness = brightness
-    dev.set_mode(m)   # сам перечитывает устройство с сервера
-    m = dev.modes[dev.active_mode]
-    if m.name != "Static" or m.color_mode != ModeColors.PER_LED:
-        sys.exit(f"сервер не принял Static, остался {m.name!r}")
+    dev.set_mode(m)
+    # Сервер применяет режим в своём потоке и первые доли секунды отдаёт старый.
+    # Ждём подтверждения: без него set_color молча ничего не шлёт.
+    for _ in range(15):
+        m = dev.modes[dev.active_mode]
+        if (m.name, m.color_mode, m.brightness) == ("Static", ModeColors.PER_LED, brightness):
+            return
+        time.sleep(0.2)
+        dev.update()
+    sys.exit(f"сервер не принял Static, остался {m.name!r}")
 
 
 def main(action):
