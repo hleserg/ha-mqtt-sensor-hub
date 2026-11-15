@@ -381,10 +381,20 @@ after the power cut. `on` needs a retry with backoff and an alert when it
 finally fails — the moment it matters is exactly the moment the server is
 already unpowered.
 
-**Not decided yet:** whether the plug's state reaches MQTT from the script, from
-a poller, or from HA in read-only mode; whether it lives under `own/` or a new
-namespace, since it is neither a sensor of mine nor somebody else's transmitter.
-Decide that before writing anything.
+**Decided 2026-11-15: the plug's state does not go to MQTT at all.** HA already
+reads it through the built-in `tplink` integration (`sensor.server_socket_*`),
+and nothing else would consume an `own/mc-server/power` topic — so no poller,
+no topic, no namespace question. HA stays read-only as decided above.
+
+**2026-11-15 — the plug moved, `tapo-api` did not.** After the IoT network move
+the router reserves `192.168.20.134` for the plug (MAC `6c:4c:bc:fe:f6:1d`,
+"Розетка сервера"), while the `tapo-api` container still runs with
+`TAPO_IP=192.168.1.134` and answers `/status` with 500. Harmless while the
+server and the plug are switched off (both off the network since 2026-10-11,
+on purpose; the HA `tplink` entry sits in `setup_retry` for the same reason).
+Before the server is powered again, recreate the container with the new
+`TAPO_IP` — otherwise the power-reset rung fails. Not changed blind: with the
+plug offline there is nothing to verify against.
 
 **2026-09-06 — the script fix is written and tested, and not yet applied.**
 Reading `mc-healthcheck.sh` turned up three defects in `tapo_power_reset()`,
