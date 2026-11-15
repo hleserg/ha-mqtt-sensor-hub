@@ -193,6 +193,9 @@ the SYSTEM profile: `C:\Windows\System32\config\systemprofile\AppData\Roaming\Op
 - MSI Center's lighting is off so it does not fight OpenRGB: the services
   `Mystic_Light_Service` and `LightKeeperService` are Disabled, and so is the
   task `\MSI Task Host - LEDKeeper2_Host`. The rest of MSI Center still runs.
+  MSI Center re-enables that task when it is opened (seen 13.10.2026; disabled
+  again 15.11.2026). Check: `schtasks /Query /TN "MSI Task Host - LEDKeeper2_Host"`,
+  disable: `schtasks /Change /TN "MSI Task Host - LEDKeeper2_Host" /DISABLE`.
 - The ARGB headers JRAINBOW1..3 were detected with 0 LEDs and are now resized to
   6 each in OpenRGB's config (SDK `zone.resize`, then restart the task). While
   they were 0, the board ignored every mode change and stayed on `Rainbow wave`,
@@ -206,14 +209,17 @@ the SYSTEM profile: `C:\Windows\System32\config\systemprofile\AppData\Roaming\Op
 - JRGB1 does not light in Direct mode, only in the board's hardware modes. HA
   uses Direct for «no effect», so a plain colour from HA leaves the cooler
   dark; any HA effect lights it. HA does not offer `Static` as an effect.
+  (Since 15.11.2026 the board idles in Static and `Direct` from HA is rejected,
+  see below — a plain colour now lands in Static. Whether the cooler lights
+  then has not been checked by eye.)
 - The case fans used to run from the case's own hub (C039 V3.1, no sync
   input, own button). Their cable «MAIN» now goes straight to JRAINBOW1
   (board label JARGB_V2_1, bottom edge by JPWRLED1, `+5V · D · _ · G`).
   MAIN has three contacts in a row and does not fit the gapped header as is:
   G has to reach the fourth pin separately (contact out of the housing, or
   Dupont wires). Swapping 5V and G burns the LEDs.
-- Direct mode is volatile, so after a reboot the board shows its own saved
-  effect until HA sets a color.
+- After a reboot the board shows the mode saved in its flash: black Static
+  since 15.11.2026 (saved over the SDK), so it boots dark.
 - The GPU (`light.gigabyte_…`) is detected too; its entity is disabled.
 - The firewall rule `OpenRGB SDK from doctor` (TCP 6742 from 192.168.1.51)
   exists, but bigpc's Private/Public firewall is off, so the unauthenticated
@@ -223,7 +229,54 @@ the SYSTEM profile: `C:\Windows\System32\config\systemprofile\AppData\Roaming\Op
   install notes in `tools/pc-rgb-fader.service`) reads one beat per message
   from `ha/light_music/pc` (MQTT user `pc_rgb`, password in
   `/etc/default/pc-rgb-fader`) and fades at 30 fps over the SDK in Static mode.
-  Logs: `journalctl -u pc-rgb-fader`.
+  Logs: `journalctl -u pc-rgb-fader`. The service runs an installed copy:
+  after editing, `sudo install -m 755 tools/pc_rgb_fader.py /usr/local/bin/pc-rgb-fader`
+  and `sudo systemctl restart pc-rgb-fader`.
+
+### OpenRGB 1.0 rejects modes — the HA workaround
+
+Two faults of OpenRGB 1.0 (commit `81bbe18a`) on this board; neither is fixed
+in 1.1 (checked 15.11.2026), so updating to 1.1 does not help.
+
+1. The server compares every field of a mode description sent by a client with
+   its own (`SetModeValuesFromMode`, `RGBController.cpp:4735`). On a mismatch
+   it logs nothing, keeps the old mode and applies it again. `Direct` from
+   `openrgb-python` (HA's «no effect» and its way to turn off) never passes:
+   the client sends brightness 0, the server holds 10/10/10. `Static` passes
+   only with `color_mode = PER_LED`.
+2. After every server start `Static` is read from the board as «random colour»
+   (the rainbow flag is inverted between `SetMode` and `GetMode` of
+   `MSIMotherboard185Controller`). HA then shows the light `on` and can neither
+   turn it off nor set a colour.
+
+What covers it: `packages/pc_rgb.yaml` calls `tools/pc_rgb_fix.py` inside the HA
+container. `pc_rgb_norm` (light became `on`, or HA started) re-sends Static
+with PER_LED and reloads the config entry — the integration decides only once,
+at entity creation, which modes take a colour. `pc_rgb_off` finishes a
+`light.turn_off` that left the light on (any random-colour effect such as
+`Rainbow wave`). The fader forces PER_LED the same way.
+
+- The server applies a mode in its controller thread but answers a read at
+  once, and sends no acknowledgement to protocol 4 clients. A read right after
+  `set_mode` may still show the old mode: poll before trusting it. With the
+  old mode on the client side `set_color` silently sends nothing.
+- While the server holds Static as «random colour» with brightness above 0,
+  any rejected command re-applies it and the board lights up in rainbow. At
+  night test only from the normalized state or with mode brightness 0.
+- Is the server state normal? `docker exec iot-homeassistant python3
+  /config/tools/pc_rgb_fix.py norm` prints `ok` (`fixed` — it was not and now
+  is, `skip` — an effect is running).
+- Live check 1, off from an effect: set the effect `Rainbow wave` in HA, then
+  turn the light off. Within 5 s the board is dark, HA says `off`, the trace of
+  `pc_rgb_off` reaches `update_entity`.
+- Live check 2, server start: on bigpc `schtasks /End /TN "OpenRGB server"`,
+  then `schtasks /Run /TN "OpenRGB server"`. Within 30 s the trace of
+  `pc_rgb_norm` shows `stdout: fixed`, HA says `off`, the board stays dark.
+  Both passed 15.11.2026.
+- Remove the package, the script and the forced PER_LED in the fader when
+  bigpc runs an OpenRGB that has both faults fixed. Master relaxes the
+  brightness check for `Direct` (`RGBController.cpp:4826`), the inverted flag
+  is still there.
 
 ## bigpc commands (HASS.Agent)
 
