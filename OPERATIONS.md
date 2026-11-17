@@ -341,6 +341,14 @@ when that Chrome window is in front and shows YouTube. It logs its last run to
   -WaitSec 15`. The task only runs wscript, so the agent outlives it.
 - Editing `tools/bedtime.ps1` changes nothing on bigpc until the `Command`
   text in `commands.json` is replaced and the agent restarted.
+- Keys go out as virtual-key codes (`keybd_event`), never `SendKeys`. bigpc's
+  keyboard layout is Russian, and `SendKeys('^w')` types through the current
+  layout. It has no Latin w, so the shortcut never reached Chrome; `yt_close`
+  had the same bug until 2026-11-17.
+- In UI Automation the page's own ARIA tabs are `TabItem`s too. bedtime skips
+  the ones under a `Document` and counts a tab closed only after the recount
+  drops. Some page tabs have no `Document` above them and still pass that
+  filter, which only matters if one is named YouTube.
 
 ---
 

@@ -30,27 +30,52 @@ if (-not $DryRun) {
 # YouTube tabs: Chrome hides the tab close button from UI Automation, but a tab
 # can be selected. Select it, bring its window forward, and send Ctrl+W only
 # after checking that the focused window is that one and shows YouTube.
+# Keys go as virtual-key codes: SendKeys types through the current layout, and
+# the Russian one has no Latin w, so '^w' never reached Chrome.
 Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes
 Add-Type @'
 using System; using System.Runtime.InteropServices;
-public static class FgWin { [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow(); }
+public static class FgWin {
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] static extern uint MapVirtualKey(uint c, uint t);
+  [DllImport("user32.dll")] static extern void keybd_event(byte vk, byte sc, uint f, UIntPtr x);
+  public static void Ctrl(byte k) {
+    keybd_event(0x11, (byte)MapVirtualKey(0x11, 0), 0, UIntPtr.Zero);
+    keybd_event(k, (byte)MapVirtualKey(k, 0), 0, UIntPtr.Zero);
+    keybd_event(k, (byte)MapVirtualKey(k, 0), 2, UIntPtr.Zero);
+    keybd_event(0x11, (byte)MapVirtualKey(0x11, 0), 2, UIntPtr.Zero);
+  }
+}
 '@
 $A = [Windows.Automation.AutomationElement]
 $TS = [Windows.Automation.TreeScope]
-$tabCond = New-Object Windows.Automation.PropertyCondition($A::ControlTypeProperty, [Windows.Automation.ControlType]::TabItem)
-$shell = New-Object -ComObject WScript.Shell
+$CT = [Windows.Automation.ControlType]
+$tabCond = New-Object Windows.Automation.PropertyCondition($A::ControlTypeProperty, $CT::TabItem)
+$walk = [Windows.Automation.TreeWalker]::ControlViewWalker
+# Browser tabs showing YouTube. The page's own ARIA tabs are TabItems too, under
+# a Document: skipped. A window gone with its last tab has none.
+function YtTabs($w) {
+  try {
+    @($w.FindAll($TS::Descendants, $tabCond) | Where-Object {
+      if ($_.Current.Name -notmatch 'YouTube') { return $false }
+      $p = $walk.GetParent($_)
+      while ($p -and -not $p.Equals($w)) { if ($p.Current.ControlType -eq $CT::Document) { return $false }; $p = $walk.GetParent($p) }
+      $true
+    })
+  } catch { @() }
+}
 $closed = 0
 for ($i = 0; $i -lt 10; $i++) {
   $ids = @(Get-Process chrome -ErrorAction SilentlyContinue | ForEach-Object Id)
-  $tab = $null
+  $yt = @()
   foreach ($w in $A::RootElement.FindAll($TS::Children, [Windows.Automation.Condition]::TrueCondition)) {
     if ($ids -notcontains $w.Current.ProcessId) { continue }
-    $yt = @($w.FindAll($TS::Descendants, $tabCond) | Where-Object { $_.Current.Name -match 'YouTube' })
-    if ($DryRun) { $log += 'chrome window: youtube tabs ' + $yt.Count; continue }
-    if ($yt.Count) { $tab = $yt[0]; break }
+    $yt = @(YtTabs $w)
+    if ($DryRun) { $log += 'chrome window: youtube tabs ' + $yt.Count; $yt = @(); continue }
+    if ($yt.Count) { break }
   }
-  if (-not $tab) { break }
-  $tab.GetCurrentPattern([Windows.Automation.SelectionItemPattern]::Pattern).Select()
+  if (-not $yt.Count) { break }
+  $yt[0].GetCurrentPattern([Windows.Automation.SelectionItemPattern]::Pattern).Select()
   $wp = $w.GetCurrentPattern([Windows.Automation.WindowPattern]::Pattern)
   if ($wp.Current.WindowVisualState -eq 'Minimized') { $wp.SetWindowVisualState('Normal') }
   $w.SetFocus()
@@ -61,9 +86,12 @@ for ($i = 0; $i -lt 10; $i++) {
     $log += 'chrome not in front, stopped'
     break
   }
-  $shell.SendKeys('^w')
+  [FgWin]::Ctrl(0x57)
+  # counted only once the tab is really gone: the tab strip updates within ~1 s
+  $left = $yt.Count
+  for ($j = 0; $j -lt 6 -and $left -ge $yt.Count; $j++) { Start-Sleep -Milliseconds 250; $left = @(YtTabs $w).Count }
+  if ($left -ge $yt.Count) { $log += 'ctrl+w had no effect, stopped'; break }
   $closed++
-  Start-Sleep -Milliseconds 400
 }
 $log += 'youtube tabs closed: ' + $closed + ' t=' + $sw.ElapsedMilliseconds
 $log | Set-Content "$env:TEMP\bedtime.log"

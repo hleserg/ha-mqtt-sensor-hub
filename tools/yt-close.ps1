@@ -11,6 +11,14 @@ public static class FgWin {
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
   [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+  [DllImport("user32.dll")] static extern uint MapVirtualKey(uint c, uint t);
+  [DllImport("user32.dll")] static extern void keybd_event(byte vk, byte sc, uint f, UIntPtr x);
+  public static void Ctrl(byte k) {
+    keybd_event(0x11, (byte)MapVirtualKey(0x11, 0), 0, UIntPtr.Zero);
+    keybd_event(k, (byte)MapVirtualKey(k, 0), 0, UIntPtr.Zero);
+    keybd_event(k, (byte)MapVirtualKey(k, 0), 2, UIntPtr.Zero);
+    keybd_event(0x11, (byte)MapVirtualKey(0x11, 0), 2, UIntPtr.Zero);
+  }
 }
 '@
 $h = [FgWin]::GetForegroundWindow()
@@ -21,6 +29,8 @@ $procId = [uint32]0
 $proc = (Get-Process -Id $procId -ErrorAction SilentlyContinue).ProcessName
 if ($title.ToString() -notmatch 'YouTube' -or $proc -notin 'chrome', 'msedge', 'firefox', 'browser', 'opera') { exit }
 
+# Ctrl+W as virtual-key codes: SendKeys types through the current layout, and
+# the Russian one has no Latin w, so '^w' never reached the browser.
+[FgWin]::Ctrl(0x57)
 $shell = New-Object -ComObject WScript.Shell
-$shell.SendKeys('^w')
 [void]$shell.Popup('Сейчас перерыв или ночь. Выключатель: «Пульт» → «YouTube на компе».', 8, 'Лимит YouTube', 64)
