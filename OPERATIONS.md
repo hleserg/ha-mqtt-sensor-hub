@@ -334,6 +334,11 @@ when that Chrome window is in front and shows YouTube. It logs its last run to
 - Added 2026-11-17 by appending the entry to `commands.json` (copy
   `commands.json.bak-20261117` next to it), not in the GUI. The agent reads the
   file only at start, so a change needs an agent restart in the desktop session.
+- Restart from ssh (lands in session 0, where the agent is useless): copy
+  `tools/in-desktop.ps1` and `tools/start-agent.vbs` to `C:\Users\Serg\`, stop
+  `HASS.Agent`, then `powershell -NoProfile -ExecutionPolicy Bypass -File
+  in-desktop.ps1 -Exe wscript.exe -Arguments "//B C:\Users\Serg\start-agent.vbs"
+  -WaitSec 15`. The task only runs wscript, so the agent outlives it.
 - Editing `tools/bedtime.ps1` changes nothing on bigpc until the `Command`
   text in `commands.json` is replaced and the agent restarted.
 
