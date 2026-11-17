@@ -9,8 +9,9 @@
 # двойное  — левая: торшер, правая: маленькая лампочка;
 # долгое   — яркость всех горящих ламп комнаты: левая 20 %, правая 100 %;
 # обе сразу — отбой: весь свет выкл, но там, где датчик сейчас кого-то видит
-#   (кухня, ванная, прихожая), свет остаётся; комната гаснет всегда. Гаснут
-#   монитор и подсветка компа, зажигается ночник лисёнка.
+#   (кухня, ванная, прихожая), свет остаётся; комната гаснет всегда. На компе
+#   закрываются Майнкрафт и вкладки YouTube, гаснут монитор и подсветка компа,
+#   зажигается ночник лисёнка.
 automation:
   - id: bed_switch
     alias: "Выключатель у кровати"
@@ -65,8 +66,9 @@ automation:
                       {%- set ns.keep = ns.keep + lights -%}
                     {%- endfor -%}
                     {{ ns.keep }}
+              # Майнкрафт и YouTube на компе: tools/bedtime.ps1 через HASS.Agent
               - action: button.press
-                target: { entity_id: button.bigpc_agent_monitor_off_2 }
+                target: { entity_id: button.bigpc_agent_bedtime }
                 continue_on_error: true
               # Отдельно от «весь свет выкл»: состояние в HA бывает off при горящей
               # подсветке. Из эффектов OpenRGB сам не гасит — догашивает pc_rgb.yaml.
@@ -75,3 +77,8 @@ automation:
                 continue_on_error: true
               - action: light.turn_on       # лисёнок не в сети — HA пропустит сам
                 target: { entity_id: light.lisenok_nochnik }
+              # монитор — последним: Ctrl+W из bedtime его будит, скрипт укладывается в ~7 с
+              - delay: 10
+              - action: button.press
+                target: { entity_id: button.bigpc_agent_monitor_off_2 }
+                continue_on_error: true

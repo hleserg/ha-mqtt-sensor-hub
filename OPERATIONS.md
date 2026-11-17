@@ -322,6 +322,21 @@ speaks at most once every 2 minutes.
 
 Adding a `counter` or `history_stats` entity needs an HA restart; reload does not pick them up.
 
+### Bedtime (Minecraft and YouTube)
+
+Both buttons of the bed switch (`packages/bed_switch.yaml`) press
+`button.bigpc_agent_bedtime` («Отбой»): a PowerShell command with entity name
+`bedtime` whose inline text is the whole body of `tools/bedtime.ps1`. It closes
+the Minecraft window (the game saves and quits; Prism Launcher stays open), then
+selects every YouTube tab in Chrome through UI Automation and sends Ctrl+W only
+when that Chrome window is in front and shows YouTube. It logs its last run to
+`%TEMP%\bedtime.log` (counts only). HA turns the monitor off 10 s later.
+- Added 2026-11-17 by appending the entry to `commands.json` (copy
+  `commands.json.bak-20261117` next to it), not in the GUI. The agent reads the
+  file only at start, so a change needs an agent restart in the desktop session.
+- Editing `tools/bedtime.ps1` changes nothing on bigpc until the `Command`
+  text in `commands.json` is replaced and the agent restarted.
+
 ---
 
 ## Updating
