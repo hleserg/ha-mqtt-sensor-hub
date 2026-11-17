@@ -116,7 +116,7 @@ views:
             name: В комнате
           - input_boolean.konditsioner_vkl
           - entity: automation.konditsioner_s_24_okhlazhdat_do_21
-            name: Автоматика 24 → 21 °C
+            name: Автоматика 26 → 24 °C
           - button.ir_blaster_ac_power
 
   - title: YouTube на компе

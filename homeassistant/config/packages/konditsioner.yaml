@@ -1,13 +1,18 @@
-# Кондиционер в комнате по датчику в комнате: дошло до 24 °C — включить,
-# остыло до 21 °C — выключить.
+# Кондиционер в комнате по датчику в комнате: дошло до 26 °C — включить,
+# остыло до 24 °C — выключить. Не остыло за 2 ч — всё равно выключить и час не
+# включать: 17.11 комната с кондеем встала на ~25 °C, без лимита он дул бы вечно.
 #
 # ИК Kelon (~/remote_ir_rf/esphome/ir-blaster.yaml) без обратной связи, а кадр
 # «AC Power» — переключатель питания. Поэтому включён ли кондей, HA помнит сам:
 # input_boolean.konditsioner_vkl. Пульт мимо HA или потерянный кадр сбивают
 # флажок — тогда поправить его руками (Пульт → Кондиционер), кондей при этом
 # не трогается.
-# Кадр «AC Power» несёт и режим: охлаждение, вентилятор авто, уставка ниже
-# 21 °C, так что кондей дует, пока его не выключит HA.
+# Кадр «AC Power» несёт и режим: охлаждение, вентилятор авто, уставка 16–18 °C,
+# так что кондей дует, пока его не выключит HA.
+#
+# ponytail: 2 ч и час паузы считаются от last_changed флажка, а его сбрасывает
+# рестарт HA — после рестарта отсчёт начинается заново. Точнее — розетка с
+# замером на кондей.
 
 input_boolean:
   konditsioner_vkl:
@@ -16,14 +21,21 @@ input_boolean:
 
 automation:
   - id: konditsioner_21_24
-    alias: "Кондиционер: с 24 охлаждать до 21"
+    alias: "Кондиционер: с 26 охлаждать до 24"
     triggers:
       - trigger: state
         entity_id: sensor.0xa4c138850d54de9f_temperature
+      - trigger: time_pattern
+        minutes: "/5"
+        id: limit
     variables:
       t: "{{ states('sensor.0xa4c138850d54de9f_temperature') | float(none) }}"
       vkl: "{{ is_state('input_boolean.konditsioner_vkl', 'on') }}"
-    conditions: "{{ t is number and ((t >= 24 and not vkl) or (t <= 21 and vkl)) }}"
+      # минут с последнего включения или выключения
+      proshlo: "{{ ((now() - states.input_boolean.konditsioner_vkl.last_changed).total_seconds() / 60) | round(1) }}"
+    conditions: >-
+      {{ (vkl and proshlo >= 120) if trigger.id == 'limit'
+         else (t is number and ((t >= 26 and not vkl and proshlo >= 60) or (t <= 24 and vkl))) }}
     actions:
       - action: button.press
         target: { entity_id: button.ir_blaster_ac_power }
