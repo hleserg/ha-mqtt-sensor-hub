@@ -104,6 +104,21 @@ views:
             icon: mdi:menu
             tap_action: { <<: *send, data: { command: MENU } }
 
+  # packages/konditsioner.yaml. Флажок — память HA о кондее: поправить, если
+  # кондей включали или выключали пультом. Нажатие «AC Power» сбивает флажок.
+  - title: Кондиционер
+    path: konditsioner
+    icon: mdi:air-conditioner
+    cards:
+      - type: entities
+        entities:
+          - entity: sensor.0xa4c138850d54de9f_temperature
+            name: В комнате
+          - input_boolean.konditsioner_vkl
+          - entity: automation.konditsioner_s_24_okhlazhdat_do_21
+            name: Автоматика 24 → 21 °C
+          - button.ir_blaster_ac_power
+
   - title: YouTube на компе
     path: youtube
     icon: mdi:youtube
